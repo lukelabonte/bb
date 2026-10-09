@@ -14,25 +14,39 @@ const MODIFIER_SUBMIT_SHORTCUT: AppShortcut = {
   shift: false,
 };
 
-export function isModifierSubmitKeyEvent(event: {
-  key: string;
-  metaKey: boolean;
-  ctrlKey: boolean;
-  altKey: boolean;
-  shiftKey: boolean;
-}): boolean {
+const SHIFT_MODIFIER_SUBMIT_SHORTCUT: AppShortcut = {
+  ...MODIFIER_SUBMIT_SHORTCUT,
+  shift: true,
+};
+
+export function isModifierSubmitKeyEvent(
+  event: {
+    key: string;
+    metaKey: boolean;
+    ctrlKey: boolean;
+    altKey: boolean;
+    shiftKey: boolean;
+  },
+  shift = false,
+): boolean {
   return (
     event.key === "Enter" &&
     (event.metaKey || event.ctrlKey) &&
     !event.altKey &&
-    !event.shiftKey
+    event.shiftKey === shift
   );
 }
 
-export function modifierSubmitShortcutLabel(): string {
-  return formatAppShortcut(MODIFIER_SUBMIT_SHORTCUT, browserPlatform());
+export function modifierSubmitShortcutLabel(shift = false): string {
+  return formatAppShortcut(
+    shift ? SHIFT_MODIFIER_SUBMIT_SHORTCUT : MODIFIER_SUBMIT_SHORTCUT,
+    browserPlatform(),
+  );
 }
 
-export function modifierSubmitShortcutAria(): string {
-  return formatAppShortcutAria(MODIFIER_SUBMIT_SHORTCUT, browserPlatform());
+export function modifierSubmitShortcutAria(shift = false): string {
+  return formatAppShortcutAria(
+    shift ? SHIFT_MODIFIER_SUBMIT_SHORTCUT : MODIFIER_SUBMIT_SHORTCUT,
+    browserPlatform(),
+  );
 }

@@ -1781,6 +1781,7 @@ describe("migrate", () => {
         showKeyboardHints: false,
         showGitChanges: true,
         steerActiveThreadOnEnter: true,
+        enterInsertsNewline: false,
         confirmThreadArchive: true,
         showDiagnosticEvents: true,
         keepHistoryAfterContextClear: false,

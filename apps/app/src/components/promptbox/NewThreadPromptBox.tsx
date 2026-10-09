@@ -42,6 +42,7 @@ import {
 } from "@/components/promptbox/PromptBoxInternal";
 import { usePromptModePermissionDisplay } from "@/components/promptbox/usePromptModePermissionDisplay";
 import { usePromptVoice } from "@/components/promptbox/usePromptVoice";
+import { modifierSubmitShortcutLabel } from "./modifier-submit-shortcut";
 import {
   EnvironmentPickerUI,
   type EnvironmentPickerMachines,
@@ -271,6 +272,11 @@ const DefaultNewThreadComposer = memo(function DefaultNewThreadComposer({
   onComposerLayoutChange,
   onFocusCommand,
 }: DefaultNewThreadComposerProps) {
+  const enterInsertsNewline =
+    useSystemConfig().data?.generalSettings?.enterInsertsNewline ?? false;
+  const primarySubmitShortcut = enterInsertsNewline
+    ? modifierSubmitShortcutLabel()
+    : "Enter";
   const isProjectlessPrompt = project?.value === null;
   const placeholder =
     placeholderOverride ?? getNewThreadPromptPlaceholder(isProjectlessPrompt);
@@ -285,7 +291,7 @@ const DefaultNewThreadComposer = memo(function DefaultNewThreadComposer({
     ? "Submitting..."
     : execution.model.isLoading
       ? "Loading models..."
-      : "Submit (Enter)";
+      : `Submit (${primarySubmitShortcut})`;
 
   return (
     <div

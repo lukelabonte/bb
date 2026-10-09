@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { act, cleanup, render } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultAppSettings, pluginCommandId } from "@bb/domain";
+import { pluginCommandId } from "@bb/domain";
 import { EMPTY_ORDERED_MENTION_SUGGESTIONS } from "@bb/client-core";
 import {
   AppCommandProvider,
@@ -16,7 +16,13 @@ import {
   resetPluginSlotStoreForTest,
   setPluginSlotRegistrations,
 } from "@/lib/plugin-slots";
-import { makePluginRegistrationSet } from "@/test/fixtures/plugins";
+import {
+  createComposerQueryHarness,
+  makePluginRegistrationSet,
+  renderWithQueryClient,
+} from "@/test/fixtures/plugins";
+import { systemConfigQueryKey } from "@/hooks/queries/query-keys";
+import { makeSystemConfig } from "@/test/fixtures/system-config";
 import {
   PluginComposerHostProvider,
   type PluginComposerHost,
@@ -33,25 +39,6 @@ const SHORTCUT = {
   shift: false,
   control: true,
 };
-
-vi.mock("@/hooks/queries/system-queries", () => ({
-  useSystemConfig: () => ({
-    data: {
-      generalSettings: { ...defaultAppSettings },
-      keybindings: [
-        {
-          command: "composer.focus",
-          desktopOnly: false,
-          shortcut: { ...SHORTCUT, key: "c" },
-          when: {
-            all: ["mainSurface", "promptAvailable"],
-            none: ["modalOpen", "terminalFocus", "browserFocus"],
-          },
-        },
-      ],
-    },
-  }),
-}));
 
 vi.mock("@/lib/bb-desktop", () => ({
   getBbDesktopInfo: () => null,
@@ -144,6 +131,23 @@ function RunnerProbe({
 function renderComposers() {
   const focused: string[] = [];
   const runner: { current: AppCommandRunner | null } = { current: null };
+  const { queryClient } = createComposerQueryHarness();
+  queryClient.setQueryData(
+    systemConfigQueryKey(),
+    makeSystemConfig({
+      keybindings: [
+        {
+          command: "composer.focus",
+          desktopOnly: false,
+          shortcut: { ...SHORTCUT, key: "c" },
+          when: {
+            all: ["mainSurface", "promptAvailable"],
+            none: ["modalOpen", "terminalFocus", "browserFocus"],
+          },
+        },
+      ],
+    }),
+  );
   const view = render(
     <MemoryRouter>
       <AppCommandProvider>
@@ -169,6 +173,9 @@ function renderComposers() {
         </div>
       </AppCommandProvider>
     </MemoryRouter>,
+    {
+      wrapper: ({ children }) => renderWithQueryClient(children, queryClient),
+    },
   );
   const editorIn = (composerKey: string) => {
     const editor = view

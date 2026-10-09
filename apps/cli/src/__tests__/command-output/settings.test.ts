@@ -359,6 +359,78 @@ describe("bb settings commands", () => {
     });
   });
 
+  it.each([
+    { value: "true", expected: true },
+    { value: "false", expected: false },
+    { value: "on", expected: true },
+    { value: "off", expected: false },
+  ])(
+    "writes Enter-as-newline as a typed $expected for CLI value $value",
+    async ({ value, expected }) => {
+      const settings = {
+        ...defaultAppSettings,
+        enterInsertsNewline: !expected,
+        showKeyboardHints: false,
+        steerActiveThreadOnEnter: false,
+      };
+      const put = vi.fn(async ({ json }) => json);
+      stubServerApi({
+        "v1.system.config.$get": vi.fn(async () => ({
+          generalSettings: settings,
+          experiments: defaultExperiments,
+        })),
+        "v1.settings.general.$put": put,
+      });
+
+      await runCommand(
+        ["settings", "general", "enterInsertsNewline", value],
+        register,
+      );
+
+      expect(put).toHaveBeenCalledExactlyOnceWith({
+        json: { ...settings, enterInsertsNewline: expected },
+      });
+    },
+  );
+
+  it("rejects an invalid Enter-as-newline value without writing settings", async () => {
+    const put = vi.fn(async ({ json }) => json);
+    stubServerApi({
+      "v1.system.config.$get": vi.fn(async () => ({
+        generalSettings: defaultAppSettings,
+        experiments: defaultExperiments,
+      })),
+      "v1.settings.general.$put": put,
+    });
+    await expect(
+      runCommand(
+        ["settings", "general", "enterInsertsNewline", "yes"],
+        register,
+      ),
+    ).rejects.toThrow("process.exit:1");
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid value 'yes' for 'enterInsertsNewline'"),
+    );
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown general setting key", async () => {
+    stubServerApi({
+      "v1.system.config.$get": vi.fn(async () => ({
+        generalSettings: defaultAppSettings,
+        experiments: defaultExperiments,
+      })),
+      "v1.settings.general.$put": vi.fn(async ({ json }) => json),
+    });
+
+    await expect(
+      runCommand(["settings", "general", "notASetting", "true"], register),
+    ).rejects.toThrow("process.exit:1");
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining("Unknown general setting 'notASetting'"),
+    );
+  });
+
   it("enables the changelog preview experiment", async () => {
     const put = vi.fn(async ({ json }) => json);
     stubServerApi({ "v1.settings.experiments.$put": put });

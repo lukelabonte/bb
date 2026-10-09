@@ -1,17 +1,19 @@
 // @vitest-environment jsdom
 
-import { createElement, type ComponentProps } from "react";
+import { createElement, type ComponentProps, type ReactNode } from "react";
+import type { QueryClient } from "@tanstack/react-query";
+import type { SystemConfigResponse } from "@bb/server-contract";
 import {
   act,
   cleanup,
   fireEvent,
-  render,
+  render as renderWithoutProviders,
+  waitFor,
   screen,
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  defaultAppSettings,
   type AppDefaultKeybindings,
   type AppKeybindingOverrides,
 } from "@bb/domain";
@@ -21,6 +23,12 @@ import {
   removePluginSlotRegistrations,
 } from "@/lib/plugin-slots";
 import { KeyboardSettingsSection } from "./KeyboardSettingsSection";
+import { systemConfigQueryKey } from "@/hooks/queries/query-keys";
+import { makeSystemConfig } from "@/test/fixtures/system-config";
+import {
+  createComposerQueryHarness,
+  renderWithQueryClient,
+} from "@/test/fixtures/plugins";
 
 const testState = vi.hoisted(() => {
   const defaultKeybindings = [
@@ -155,15 +163,32 @@ const testState = vi.hoisted(() => {
   };
 });
 
-vi.mock("@/hooks/queries/system-queries", () => ({
-  useSystemConfig: () => ({
-    data: {
+function render(
+  ui: ReactNode,
+  queryClient: QueryClient = createComposerQueryHarness().queryClient,
+) {
+  function syncKeybindings() {
+    const config =
+      queryClient.getQueryData<SystemConfigResponse>(systemConfigQueryKey()) ??
+      makeSystemConfig();
+    queryClient.setQueryData(systemConfigQueryKey(), {
+      ...config,
       defaultKeybindings: testState.defaultKeybindings,
-      generalSettings: defaultAppSettings,
       keybindingOverrides: testState.keybindingOverrides,
+    });
+  }
+  syncKeybindings();
+  const view = renderWithoutProviders(ui, {
+    wrapper: ({ children }) => renderWithQueryClient(children, queryClient),
+  });
+  return {
+    ...view,
+    rerender(next: ReactNode) {
+      act(syncKeybindings);
+      view.rerender(next);
     },
-  }),
-}));
+  };
+}
 
 vi.mock("@/hooks/mutations/settings-mutations", () => ({
   useUpdateGeneralSettings: () => ({
@@ -631,6 +656,52 @@ describe("KeyboardSettingsSection", () => {
     ).toBeTruthy();
   });
 
+  it.each([false, true])(
+    "reads cached enterInsertsNewline=%s and saves the opposite preference",
+    (enterInsertsNewline) => {
+      const harness = createComposerQueryHarness();
+      harness.setGeneralSettings({ enterInsertsNewline });
+      render(<KeyboardSettingsSection />, harness.queryClient);
+      const toggle = screen.getByRole("switch", {
+        name: "Enter inserts a newline",
+      });
+
+      expect(toggle.getAttribute("aria-checked")).toBe(
+        String(enterInsertsNewline),
+      );
+      fireEvent.click(toggle);
+      expect(testState.generalMutate).toHaveBeenCalledExactlyOnceWith({
+        enterInsertsNewline: !enterInsertsNewline,
+      });
+    },
+  );
+
+  it("keeps the default-off newline preference through unrelated settings updates", async () => {
+    const harness = createComposerQueryHarness();
+    render(<KeyboardSettingsSection />, harness.queryClient);
+    const toggle = screen.getByRole("switch", {
+      name: "Enter inserts a newline",
+    });
+
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    act(() => harness.setGeneralSettings({ showKeyboardHints: false }));
+    await waitFor(() => {
+      expect(
+        screen
+          .getByRole("switch", {
+            name: "Show keyboard hints when holding CMD / Control",
+          })
+          .getAttribute("aria-checked"),
+      ).toBe("false");
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(testState.generalMutate).not.toHaveBeenCalled();
+    fireEvent.click(toggle);
+    expect(testState.generalMutate).toHaveBeenCalledExactlyOnceWith({
+      enterInsertsNewline: true,
+    });
+  });
+
   it("turns keyboard hints off", () => {
     render(<KeyboardSettingsSection />);
 
@@ -643,6 +714,9 @@ describe("KeyboardSettingsSection", () => {
     expect(testState.generalMutate).toHaveBeenCalledWith({
       showKeyboardHints: false,
     });
+    const mutated = testState.generalMutate.mock.calls[0]?.[0];
+    expect(mutated).toEqual({ showKeyboardHints: false });
+    expect(Object.keys(mutated ?? {})).toEqual(["showKeyboardHints"]);
   });
 
   it("records, clears, and resets a command shortcut", () => {

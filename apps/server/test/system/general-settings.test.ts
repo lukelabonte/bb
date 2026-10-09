@@ -218,3 +218,91 @@ it.each(["confirmThreadArchive", "showGitChanges"] as const)(
     });
   },
 );
+
+it("exposes enterInsertsNewline in config defaults and reflects a PUT", async () => {
+  await withTestHarness(async (harness) => {
+    const config = systemConfigResponseSchema.parse(
+      await readJson(await harness.app.request("/api/v1/system/config")),
+    );
+    expect(config.generalSettings.enterInsertsNewline).toBe(false);
+
+    const put = await harness.app.request("/api/v1/settings/general", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...defaultAppSettings,
+        enterInsertsNewline: true,
+      }),
+    });
+    expect(put.status).toBe(200);
+    expect(
+      appSettingsSchema
+        .extend({
+          showUnhandledProviderEvents:
+            appSettingsSchema.shape.showDiagnosticEvents,
+        })
+        .parse(await readJson(put)).enterInsertsNewline,
+    ).toBe(true);
+    expect(getAppSettings(harness.db).enterInsertsNewline).toBe(true);
+    const reloaded = systemConfigResponseSchema.parse(
+      await readJson(await harness.app.request("/api/v1/system/config")),
+    );
+    expect(reloaded.generalSettings.enterInsertsNewline).toBe(true);
+  });
+});
+
+it.each(["showDiagnosticEvents", "showUnhandledProviderEvents"] as const)(
+  "preserves saved Enter-as-newline when an older %s client omits the key",
+  async (diagnosticKey) => {
+    await withTestHarness(async (harness) => {
+      const put = (settings: object) =>
+        harness.app.request("/api/v1/settings/general", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(settings),
+        });
+      expect(
+        (await put({ ...defaultAppSettings, enterInsertsNewline: true }))
+          .status,
+      ).toBe(200);
+
+      const {
+        enterInsertsNewline: _omittedNewline,
+        showDiagnosticEvents: _omittedDiagnostic,
+        ...legacy
+      } = defaultAppSettings;
+      expect(
+        (
+          await put({
+            ...legacy,
+            [diagnosticKey]: true,
+            showKeyboardHints: false,
+          })
+        ).status,
+      ).toBe(200);
+
+      const config = systemConfigResponseSchema.parse(
+        await readJson(await harness.app.request("/api/v1/system/config")),
+      );
+      expect(config.generalSettings.enterInsertsNewline).toBe(true);
+      expect(config.generalSettings.showKeyboardHints).toBe(false);
+      expect(config.generalSettings.showDiagnosticEvents).toBe(true);
+      expect(getAppSettings(harness.db).enterInsertsNewline).toBe(true);
+
+      expect(
+        (
+          await put({
+            ...legacy,
+            [diagnosticKey]: true,
+            enterInsertsNewline: false,
+          })
+        ).status,
+      ).toBe(200);
+      const disabled = systemConfigResponseSchema.parse(
+        await readJson(await harness.app.request("/api/v1/system/config")),
+      );
+      expect(disabled.generalSettings.enterInsertsNewline).toBe(false);
+      expect(getAppSettings(harness.db).enterInsertsNewline).toBe(false);
+    });
+  },
+);

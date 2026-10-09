@@ -8,11 +8,18 @@ import {
   type OpenAttachmentRequest,
 } from "@/components/secondary-panel/AttachmentOpenerContext";
 import { registerComposerMenuPlugins } from "@/test/fixtures/composer-menu";
+import {
+  createComposerQueryHarness,
+  renderWithQueryClient,
+} from "@/test/fixtures/plugins";
 import { resolveThreadMentionDropTarget } from "@/lib/thread-mention-drop";
 import { sdk } from "@/lib/sdk";
-import type { PromptTextMention } from "@bb/domain";
+import { systemConfigQueryKey } from "@/hooks/queries/query-keys";
+import { makeSystemConfig } from "@/test/fixtures/system-config";
+import { isMacKeyboardPlatform, type PromptTextMention } from "@bb/domain";
 import { createDeferredPromise } from "@bb/test-helpers";
 import type { TiptapEditorHTMLElement } from "@tiptap/core";
+import { closeHistory } from "@tiptap/pm/history";
 import { TextSelection } from "@tiptap/pm/state";
 import { CompactViewportOverrideProvider } from "@bb/shared-ui/hooks/use-compact-viewport";
 import { EditorView } from "@tiptap/pm/view";
@@ -26,6 +33,7 @@ import {
   type ComponentType,
   type ComponentProps,
   type RefObject,
+  type ReactNode,
 } from "react";
 import {
   act,
@@ -98,7 +106,15 @@ import type {
 const render = (
   ui: Parameters<typeof renderWithoutProviders>[0],
   options?: Parameters<typeof renderWithoutProviders>[1],
-) => renderWithoutProviders(ui, { wrapper: TooltipProvider, ...options });
+) => {
+  const { queryClient } = createComposerQueryHarness();
+  const Wrapper = options?.wrapper ?? TooltipProvider;
+  return renderWithoutProviders(ui, {
+    ...options,
+    wrapper: ({ children }: { children: ReactNode }) =>
+      renderWithQueryClient(<Wrapper>{children}</Wrapper>, queryClient),
+  });
+};
 
 type PromptBoxProps = ComponentProps<typeof PromptBoxInternal>;
 
@@ -6285,4 +6301,1020 @@ describe("thread URL clipboard paste", () => {
       }
     },
   );
+});
+
+describe("PromptBoxInternal Enter-as-newline preference", () => {
+  function mountComposer(
+    preference: boolean | "missing",
+    props: Partial<PromptBoxProps> = {},
+    harness = createComposerQueryHarness(),
+  ) {
+    if (preference === "missing") {
+      const config = makeSystemConfig();
+      const generalSettings = { ...config.generalSettings };
+      Reflect.deleteProperty(generalSettings, "enterInsertsNewline");
+      harness.queryClient.setQueryData(systemConfigQueryKey(), {
+        ...config,
+        generalSettings,
+      });
+    } else {
+      harness.setGeneralSettings({ enterInsertsNewline: preference });
+    }
+    const changes: PromptChange[] = [];
+    const onSubmit = props.onSubmit ?? vi.fn();
+    function Composer() {
+      const [value, setValue] = useState(props.value ?? "Follow up");
+      const [mentionRanges, setMentionRanges] = useState(
+        props.mentionRanges ?? [],
+      );
+      return (
+        <PromptBoxInternal
+          {...createPromptBoxProps(props)}
+          value={value}
+          mentionRanges={mentionRanges}
+          onSubmit={onSubmit}
+          onChange={(nextValue, nextMentions) => {
+            changes.push({ value: nextValue, mentions: nextMentions });
+            setValue(nextValue);
+            setMentionRanges(nextMentions);
+            props.onChange?.(nextValue, nextMentions);
+          }}
+        />
+      );
+    }
+    const view = renderWithoutProviders(
+      renderWithQueryClient(
+        <TooltipProvider>
+          <MemoryRouter>
+            <Composer />
+          </MemoryRouter>
+        </TooltipProvider>,
+        harness.queryClient,
+      ),
+    );
+    const element = view.container.querySelector<TiptapEditorHTMLElement>(
+      '[contenteditable="true"]',
+    );
+    const editor = element?.editor;
+    if (!element || !editor) throw new Error("Editor was not mounted");
+    act(() =>
+      editor.commands.setTextSelection(editor.state.doc.content.size - 1),
+    );
+    return { ...harness, view, element, editor, changes, onSubmit };
+  }
+
+  const actionCases = [
+    {
+      preference: false,
+      swap: false,
+      immediate: true,
+      plain: "draft",
+      mod: "immediate",
+      modShift: "none",
+    },
+    {
+      preference: false,
+      swap: false,
+      immediate: false,
+      plain: "draft",
+      mod: "draft",
+      modShift: "none",
+    },
+    {
+      preference: false,
+      swap: true,
+      immediate: true,
+      plain: "immediate",
+      mod: "draft",
+      modShift: "none",
+    },
+    {
+      preference: false,
+      swap: true,
+      immediate: false,
+      plain: "none",
+      mod: "draft",
+      modShift: "none",
+    },
+    {
+      preference: true,
+      swap: false,
+      immediate: true,
+      plain: "newline",
+      mod: "draft",
+      modShift: "immediate",
+    },
+    {
+      preference: true,
+      swap: false,
+      immediate: false,
+      plain: "newline",
+      mod: "draft",
+      modShift: "none",
+    },
+    {
+      preference: true,
+      swap: true,
+      immediate: true,
+      plain: "newline",
+      mod: "immediate",
+      modShift: "draft",
+    },
+    {
+      preference: true,
+      swap: true,
+      immediate: false,
+      plain: "newline",
+      mod: "none",
+      modShift: "draft",
+    },
+  ];
+
+  describe.each([
+    { platform: "MacIntel", modifier: { metaKey: true } },
+    { platform: "Win32", modifier: { ctrlKey: true } },
+    { platform: "Linux x86_64", modifier: { ctrlKey: true } },
+  ])("$platform browser modifier events", ({ platform, modifier }) => {
+    it.each(actionCases)(
+      "resolves chords with preference=$preference swap=$swap immediate=$immediate",
+      async ({ preference, swap, immediate, plain, mod, modShift }) => {
+        const platformMock = vi
+          .spyOn(navigator, "platform", "get")
+          .mockReturnValue(platform);
+        const restorePointer = mockPointerCoarse(false);
+        try {
+          const draft = vi.fn();
+          const steer = vi.fn();
+          const stop = vi.fn();
+          const { element, editor, view } = mountComposer(preference, {
+            onSubmit: draft,
+            submission: {
+              onModifierSubmit: immediate ? steer : undefined,
+              swapSubmitActions: swap,
+              isRunning: true,
+              onStop: stop,
+              title: "Send response",
+            },
+          });
+          for (const chord of [
+            { event: {}, expected: plain },
+            { event: { shiftKey: true }, expected: "newline" },
+            { event: modifier, expected: mod },
+            { event: { ...modifier, shiftKey: true }, expected: modShift },
+          ]) {
+            act(() => {
+              editor.commands.setContent("<p>Follow up</p>");
+              editor.commands.setTextSelection(10);
+            });
+            draft.mockClear();
+            steer.mockClear();
+            const before = editor.getJSON();
+            const defaultAllowed = fireEvent.keyDown(element, {
+              key: "Enter",
+              code: "Enter",
+              ...chord.event,
+            });
+            expect(draft).toHaveBeenCalledTimes(
+              chord.expected === "draft" ? 1 : 0,
+            );
+            expect(steer).toHaveBeenCalledTimes(
+              chord.expected === "immediate" ? 1 : 0,
+            );
+            if (chord.expected === "none" && "shiftKey" in chord.event) {
+              expect(defaultAllowed).toBe(true);
+              expect(editor.getJSON()).toEqual(before);
+            }
+            if (chord.expected === "newline") {
+              await waitFor(() => expect(editor.state.doc.childCount).toBe(2));
+              expect(editor.state.doc.firstChild?.textContent).toBe(
+                "Follow up",
+              );
+              expect(editor.state.doc.lastChild?.textContent).toBe("");
+              expect(editor.state.selection.empty).toBe(true);
+              expect(editor.state.selection.$from.parentOffset).toBe(0);
+            } else {
+              expect(editor.state.doc.textContent).toBe("Follow up");
+            }
+          }
+          act(() => editor.commands.setContent("<p>Follow up</p>"));
+          draft.mockClear();
+          steer.mockClear();
+          if (swap && !immediate) {
+            expect(
+              within(view.container).queryByRole("button", {
+                name: "Send response",
+              }),
+            ).toBeNull();
+          } else {
+            fireEvent.click(
+              within(view.container).getByRole("button", {
+                name: "Send response",
+              }),
+            );
+          }
+          expect(draft).toHaveBeenCalledTimes(swap ? 0 : 1);
+          expect(steer).toHaveBeenCalledTimes(swap && immediate ? 1 : 0);
+          expect(stop).not.toHaveBeenCalled();
+        } finally {
+          restorePointer();
+          platformMock.mockRestore();
+        }
+      },
+    );
+  });
+
+  it("treats a missing saved preference as the legacy Enter policy", () => {
+    const draft = vi.fn();
+    const immediate = vi.fn();
+    const { element } = mountComposer("missing", {
+      onSubmit: draft,
+      submission: { onModifierSubmit: immediate },
+    });
+    fireEvent.keyDown(element, { key: "Enter" });
+    fireEvent.keyDown(element, { key: "Enter", metaKey: true });
+    fireEvent.keyDown(element, { key: "Enter", metaKey: true, shiftKey: true });
+    expect(draft).toHaveBeenCalledOnce();
+    expect(immediate).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])(
+    "preserves modified Enter behavior with preference=%s",
+    (preference) => {
+      const draft = vi.fn();
+      const immediate = vi.fn();
+      const { element } = mountComposer(preference, {
+        onSubmit: draft,
+        submission: { onModifierSubmit: immediate },
+      });
+      fireEvent.keyDown(element, { key: "Enter", altKey: true });
+      fireEvent.keyDown(element, { key: "Enter", altKey: true, metaKey: true });
+      fireEvent.keyDown(element, {
+        key: "Enter",
+        altKey: true,
+        shiftKey: true,
+      });
+      expect(draft).toHaveBeenCalledTimes(preference ? 0 : 2);
+      expect(immediate).not.toHaveBeenCalled();
+    },
+  );
+
+  describe.each([false, true])(
+    "eligibility with preference=%s",
+    (preference) => {
+      it.each([
+        { label: "disabled", submission: { disabled: true }, attachments: {} },
+        {
+          label: "submitting",
+          submission: { isSubmitting: true },
+          attachments: {},
+        },
+        {
+          label: "attaching",
+          submission: {},
+          attachments: { isAttaching: true },
+        },
+        {
+          label: "pending attachment upload",
+          submission: {},
+          attachments: {
+            isAttaching: true,
+            pendingUploads: [
+              { id: "upload", file: new File(["draft"], "draft.txt") },
+            ],
+          },
+        },
+      ])(
+        "blocks both resolved actions while $label",
+        ({ submission, attachments }) => {
+          const platformMock = vi
+            .spyOn(navigator, "platform", "get")
+            .mockReturnValue("MacIntel");
+          try {
+            for (const swapSubmitActions of [false, true]) {
+              const draft = vi.fn();
+              const immediate = vi.fn();
+              const composer = mountComposer(preference, {
+                onSubmit: draft,
+                submission: {
+                  ...submission,
+                  swapSubmitActions,
+                  onModifierSubmit: immediate,
+                },
+                attachments,
+              });
+              for (const modifiers of [
+                {},
+                { shiftKey: true },
+                { metaKey: true },
+                { metaKey: true, shiftKey: true },
+              ]) {
+                fireEvent.keyDown(composer.element, {
+                  key: "Enter",
+                  ...modifiers,
+                });
+              }
+              expect(draft).not.toHaveBeenCalled();
+              expect(immediate).not.toHaveBeenCalled();
+              composer.view.unmount();
+            }
+          } finally {
+            platformMock.mockRestore();
+          }
+        },
+      );
+
+      it.each([false, true])(
+        "keeps input-required draft and intentional empty immediate eligibility with swap=%s",
+        (swapSubmitActions) => {
+          const platformMock = vi
+            .spyOn(navigator, "platform", "get")
+            .mockReturnValue("MacIntel");
+          try {
+            const draft = vi.fn();
+            const immediate = vi.fn();
+            const { element, editor } = mountComposer(preference, {
+              value: "",
+              onSubmit: draft,
+              submission: { swapSubmitActions, onModifierSubmit: immediate },
+            });
+            fireEvent.keyDown(element, { key: "Enter", metaKey: true });
+            expect(draft).not.toHaveBeenCalled();
+            expect(immediate).toHaveBeenCalledTimes(
+              preference === swapSubmitActions ? 1 : 0,
+            );
+            immediate.mockClear();
+            fireEvent.keyDown(element, {
+              key: "Enter",
+              metaKey: true,
+              shiftKey: true,
+            });
+            expect(draft).not.toHaveBeenCalled();
+            expect(immediate).toHaveBeenCalledTimes(
+              preference && !swapSubmitActions ? 1 : 0,
+            );
+            immediate.mockClear();
+            fireEvent.keyDown(element, { key: "Enter" });
+            expect(draft).not.toHaveBeenCalled();
+            expect(immediate).toHaveBeenCalledTimes(
+              !preference && swapSubmitActions ? 1 : 0,
+            );
+            if (preference) {
+              expect(editor.state.doc.childCount).toBe(2);
+              expect(editor.state.doc.textContent).toBe("");
+            }
+          } finally {
+            platformMock.mockRestore();
+          }
+        },
+      );
+
+      it("allows the input-required action when an attachment supplies the draft input", () => {
+        const platformMock = vi
+          .spyOn(navigator, "platform", "get")
+          .mockReturnValue("MacIntel");
+        try {
+          const draft = vi.fn();
+          const { element } = mountComposer(preference, {
+            value: "",
+            onSubmit: draft,
+            attachments: {
+              items: [
+                {
+                  type: "localFile",
+                  name: "notes.txt",
+                  path: "notes.txt",
+                  sizeBytes: 1,
+                },
+              ],
+            },
+          });
+          fireEvent.keyDown(element, { key: "Enter", metaKey: preference });
+          expect(draft).toHaveBeenCalledOnce();
+        } finally {
+          platformMock.mockRestore();
+        }
+      });
+    },
+  );
+
+  describe.each([false, true])("IME with preference=%s", (preference) => {
+    it.each([
+      { label: "isComposing", isComposing: true, keyCode: 13 },
+      { label: "keyCode 229", isComposing: false, keyCode: 229 },
+    ])(
+      "keeps a real active composition untouched for $label",
+      ({ isComposing, keyCode }) => {
+        const draft = vi.fn();
+        const immediate = vi.fn();
+        const { element, editor, changes } = mountComposer(preference, {
+          value: "候補",
+          onSubmit: draft,
+          submission: { onModifierSubmit: immediate },
+        });
+        const before = editor.getJSON();
+        fireEvent.compositionStart(element, { data: "候補" });
+        expect(editor.view.composing).toBe(true);
+        for (const modifiers of [
+          {},
+          { shiftKey: true },
+          { metaKey: true },
+          { metaKey: true, shiftKey: true },
+        ]) {
+          fireEvent.keyDown(element, {
+            key: "Enter",
+            code: "Enter",
+            keyCode,
+            isComposing,
+            ...modifiers,
+          });
+        }
+        expect(editor.getJSON()).toEqual(before);
+        expect(changes).toEqual([]);
+        expect(draft).not.toHaveBeenCalled();
+        expect(immediate).not.toHaveBeenCalled();
+        fireEvent.compositionEnd(element, { data: "候補" });
+      },
+    );
+
+    describe.each([
+      { label: "isComposing", isComposing: true, keyCode: 13 },
+      { label: "keyCode 229", isComposing: false, keyCode: 229 },
+    ])("event-only $label guard", ({ isComposing, keyCode }) => {
+      const nativeKeyboardPlatform = navigator.platform;
+      const modifier = isMacKeyboardPlatform(nativeKeyboardPlatform)
+        ? { metaKey: true }
+        : { ctrlKey: true };
+
+      it.each([
+        { label: "Enter", modifiers: {}, nativeResult: "paragraph" },
+        {
+          label: "Shift+Enter",
+          modifiers: { shiftKey: true },
+          nativeResult: "hardBreak",
+        },
+        {
+          label: "mod+Enter",
+          modifiers: modifier,
+          nativeResult: "hardBreak",
+        },
+        {
+          label: "mod+Shift+Enter",
+          modifiers: { ...modifier, shiftKey: true },
+          nativeResult: "unchanged",
+        },
+      ])(
+        "lets the native editor handle $label without submitting when view.composing is false",
+        ({ modifiers, nativeResult }) => {
+          const restorePointer = mockPointerCoarse(false);
+          const platformMock = vi
+            .spyOn(navigator, "platform", "get")
+            .mockReturnValue(nativeKeyboardPlatform);
+          try {
+            for (const swapSubmitActions of [false, true]) {
+              const draft = vi.fn();
+              const immediate = vi.fn();
+              const { element, editor, changes, view } = mountComposer(
+                preference,
+                {
+                  value: "候補",
+                  onSubmit: draft,
+                  submission: {
+                    onModifierSubmit: immediate,
+                    swapSubmitActions,
+                  },
+                },
+              );
+              const before = editor.getJSON();
+              const selectionBefore = editor.state.selection.toJSON();
+              expect(editor.view.composing).toBe(false);
+              const defaultAllowed = fireEvent.keyDown(element, {
+                key: "Enter",
+                code: "Enter",
+                isComposing,
+                keyCode,
+                ...modifiers,
+              });
+              expect(editor.view.composing).toBe(false);
+              expect(draft).not.toHaveBeenCalled();
+              expect(immediate).not.toHaveBeenCalled();
+              if (nativeResult === "unchanged") {
+                expect(defaultAllowed).toBe(keyCode === 229);
+                expect(editor.getJSON()).toEqual(before);
+                expect(editor.state.selection.toJSON()).toEqual(
+                  selectionBefore,
+                );
+                expect(changes).toEqual([]);
+              } else {
+                expect(defaultAllowed).toBe(false);
+                expect(editor.getJSON()).toEqual({
+                  type: "doc",
+                  content:
+                    nativeResult === "paragraph"
+                      ? [
+                          {
+                            type: "paragraph",
+                            content: [{ type: "text", text: "候補" }],
+                          },
+                          { type: "paragraph" },
+                        ]
+                      : [
+                          {
+                            type: "paragraph",
+                            content: [
+                              { type: "text", text: "候補" },
+                              { type: "hardBreak" },
+                            ],
+                          },
+                        ],
+                });
+                expect(changes).toEqual([{ value: "候補\n", mentions: [] }]);
+                expect(editor.state.selection.empty).toBe(true);
+                expect(editor.state.selection.from).toBe(
+                  nativeResult === "paragraph" ? 5 : 4,
+                );
+                expect(editor.state.selection.$from.parentOffset).toBe(
+                  nativeResult === "paragraph" ? 0 : 3,
+                );
+              }
+              view.unmount();
+            }
+          } finally {
+            restorePointer();
+            platformMock.mockRestore();
+          }
+        },
+      );
+    });
+
+    it("ignores Safari's immediate postcomposition hardware Enter but applies the policy to a later Enter", async () => {
+      const restorePointer = mockPointerCoarse(true);
+      const restoreNavigator = mockIPadOSWebKit();
+      try {
+        const { element, editor, changes, onSubmit } = mountComposer(
+          preference,
+          {
+            value: "候補",
+          },
+        );
+        const before = editor.getJSON();
+        fireEvent.compositionStart(element, { data: "候補" });
+        const ended = new CompositionEvent("compositionend", {
+          bubbles: true,
+          data: "候補",
+        });
+        fireEvent(element, ended);
+        const immediate = new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "Enter",
+          code: "Enter",
+          keyCode: 13,
+        });
+        Object.defineProperty(immediate, "timeStamp", {
+          value: ended.timeStamp + 1,
+        });
+        fireEvent(element, immediate);
+        expect(editor.getJSON()).toEqual(before);
+        expect(changes).toEqual([]);
+        expect(onSubmit).not.toHaveBeenCalled();
+        await waitFor(() => expect(editor.view.composing).toBe(false));
+        const later = new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "Enter",
+          code: "Enter",
+          keyCode: 13,
+        });
+        Object.defineProperty(later, "timeStamp", {
+          value: ended.timeStamp + 1000,
+        });
+        fireEvent(element, later);
+        expect(onSubmit).toHaveBeenCalledTimes(preference ? 0 : 1);
+        expect(editor.state.doc.childCount).toBe(preference ? 2 : 1);
+      } finally {
+        restoreNavigator();
+        restorePointer();
+      }
+    });
+
+    it("does not suppress hardware Enter after compositionend outside an active composition", () => {
+      const restorePointer = mockPointerCoarse(true);
+      const restoreNavigator = mockIPadOSWebKit();
+      try {
+        const { element, editor, onSubmit } = mountComposer(preference, {
+          value: "候補",
+        });
+        fireEvent.compositionEnd(element, { data: "候補" });
+        fireEvent.keyDown(element, {
+          key: "Enter",
+          code: "Enter",
+          keyCode: 13,
+        });
+        expect(onSubmit).toHaveBeenCalledTimes(preference ? 0 : 1);
+        expect(editor.state.doc.childCount).toBe(preference ? 2 : 1);
+      } finally {
+        restoreNavigator();
+        restorePointer();
+      }
+    });
+  });
+
+  describe.each([false, true])("typeahead with preference=%s", (preference) => {
+    it.each([
+      { label: "Enter", modifiers: {} },
+      { label: "Shift+Enter", modifiers: { shiftKey: true } },
+      { label: "mod+Enter", modifiers: { metaKey: true } },
+      {
+        label: "mod+Shift+Enter",
+        modifiers: { metaKey: true, shiftKey: true },
+      },
+    ])(
+      "completes a real command before interpreting $label",
+      async ({ modifiers }) => {
+        const draft = vi.fn();
+        const immediate = vi.fn();
+        const promptBoxRef = createRef<PromptBoxHandle>();
+        const { element, editor, changes } = mountComposer(preference, {
+          value: "/re",
+          promptBoxRef,
+          onSubmit: draft,
+          submission: { onModifierSubmit: immediate },
+          typeahead: buildTypeaheadConfig({
+            commandSuggestions: [
+              {
+                kind: "command",
+                name: "review",
+                source: "command",
+                origin: "user",
+                description: null,
+                argumentHint: null,
+              },
+            ],
+          }),
+        });
+        await focusPromptEnd(promptBoxRef);
+        await screen.findByRole("button", { name: /review/u });
+        fireEvent.keyDown(element, { key: "Enter", ...modifiers });
+        await waitFor(() => expect(latestValue(changes)).toBe("/review "));
+        expect(latestChange(changes)?.mentions[0]?.resource).toMatchObject({
+          kind: "command",
+          name: "review",
+        });
+        expect(editor.state.doc.childCount).toBe(1);
+        expect(draft).not.toHaveBeenCalled();
+        expect(immediate).not.toHaveBeenCalled();
+      },
+    );
+
+    it("completes a real mention before interpreting Enter", async () => {
+      const promptBoxRef = createRef<PromptBoxHandle>();
+      const { element, editor, changes, onSubmit } = mountComposer(preference, {
+        value: "Ask @fix login",
+        promptBoxRef,
+        typeahead: buildTypeaheadConfig({
+          mentionSuggestions: [
+            {
+              kind: "plugin",
+              pluginId: "github",
+              providerId: "issue",
+              itemId: "issue:owner/repo#42",
+              providerLabel: "GitHub issues",
+              title: "#42 Fix login bug",
+              subtitle: "owner/repo",
+              icon: null,
+              replacement: "#42 Fix login bug",
+            },
+          ],
+        }),
+      });
+      await focusPromptEnd(promptBoxRef);
+      await screen.findByRole("button", { name: /Fix login bug/u });
+      fireEvent.keyDown(element, { key: "Enter" });
+      await waitFor(() =>
+        expect(latestValue(changes)).toBe("Ask @#42 Fix login bug "),
+      );
+      expect(latestChange(changes)?.mentions[0]?.resource).toMatchObject({
+        kind: "plugin",
+        pluginId: "github",
+        itemId: "issue:owner/repo#42",
+      });
+      expect(editor.state.doc.childCount).toBe(1);
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+  });
+
+  it("keeps iPad hardware Enter and Shift+Enter as newline while Command chords submit resolved actions", async () => {
+    const restorePointer = mockPointerCoarse(true);
+    const restoreNavigator = mockIPadOSWebKit();
+    try {
+      const draft = vi.fn();
+      const immediate = vi.fn();
+      const { element, editor } = mountComposer(true, {
+        onSubmit: draft,
+        submission: { onModifierSubmit: immediate },
+        blurOnPointerSubmit: true,
+      });
+      act(() => element.focus());
+      fireEvent.keyDown(element, { key: "Enter", code: "Enter" });
+      fireEvent.keyDown(element, {
+        key: "Enter",
+        code: "Enter",
+        shiftKey: true,
+      });
+      await waitFor(() => expect(editor.state.doc.childCount).toBe(3));
+      expect(editor.state.doc.firstChild?.textContent).toBe("Follow up");
+      expect(editor.state.doc.lastChild?.textContent).toBe("");
+      expect(editor.state.selection.$from.parentOffset).toBe(0);
+      expect(draft).not.toHaveBeenCalled();
+      expect(immediate).not.toHaveBeenCalled();
+      fireEvent.keyDown(element, {
+        key: "Enter",
+        code: "Enter",
+        metaKey: true,
+      });
+      fireEvent.keyDown(element, {
+        key: "Enter",
+        code: "Enter",
+        metaKey: true,
+        shiftKey: true,
+      });
+      expect(draft).toHaveBeenCalledOnce();
+      expect(immediate).toHaveBeenCalledOnce();
+      expect(document.activeElement).toBe(element);
+    } finally {
+      restoreNavigator();
+      restorePointer();
+    }
+  });
+
+  it.each([
+    {
+      value: "# Heading",
+      shiftKey: false,
+      cursor: 4,
+      prefix: "# H",
+      suffix: "eading",
+      nextCursor: 6,
+    },
+    {
+      value: "- list item",
+      shiftKey: true,
+      cursor: 7,
+      prefix: "- list",
+      suffix: " item",
+      nextCursor: 9,
+    },
+  ])(
+    "splits $value as paragraph text at its cursor and restores Markdown and cursor with undo, shift=$shiftKey",
+    async ({ value, shiftKey, cursor, prefix, suffix, nextCursor }) => {
+      const onModifierSubmit = vi.fn();
+      const { element, editor, onSubmit } = mountComposer(true, {
+        value,
+        submission: { onModifierSubmit },
+      });
+      await waitFor(() => expect(document.activeElement).toBe(element));
+      const before = {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: value }] },
+        ],
+      };
+      expect(editor.getJSON()).toEqual(before);
+      act(() => {
+        editor.commands.setTextSelection(cursor);
+        editor.view.dispatch(closeHistory(editor.state.tr));
+      });
+      expect(editor.state.selection.from).toBe(cursor);
+      expect(editor.state.selection.empty).toBe(true);
+      fireEvent.keyDown(element, { key: "Enter", shiftKey });
+      expect(editor.getJSON()).toEqual({
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: prefix }] },
+          { type: "paragraph", content: [{ type: "text", text: suffix }] },
+        ],
+      });
+      expect(editor.state.selection.from).toBe(nextCursor);
+      expect(editor.state.selection.empty).toBe(true);
+      expect(editor.state.selection.$from.depth).toBe(1);
+      expect(editor.state.selection.$from.parentOffset).toBe(0);
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(onModifierSubmit).not.toHaveBeenCalled();
+      act(() => expect(editor.commands.undo()).toBe(true));
+      expect(editor.getJSON()).toEqual(before);
+      expect(editor.state.selection.from).toBe(cursor);
+      expect(editor.state.selection.empty).toBe(true);
+    },
+  );
+
+  it.each([
+    {
+      value: "# Heading",
+      shiftKey: false,
+      from: 4,
+      to: 7,
+      prefix: "# H",
+      suffix: "ing",
+      nextCursor: 6,
+    },
+    {
+      value: "- list item",
+      shiftKey: true,
+      from: 3,
+      to: 7,
+      prefix: "- ",
+      suffix: " item",
+      nextCursor: 4,
+    },
+  ])(
+    "uses native Enter to replace selected $value text while preserving Markdown and undo without submission, shift=$shiftKey",
+    async ({ value, shiftKey, from, to, prefix, suffix, nextCursor }) => {
+      const onModifierSubmit = vi.fn();
+      const { element, editor, onSubmit } = mountComposer(true, {
+        value,
+        submission: { onModifierSubmit },
+      });
+      await waitFor(() => expect(document.activeElement).toBe(element));
+      const before = {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: value }] },
+        ],
+      };
+      expect(editor.getJSON()).toEqual(before);
+      act(() => {
+        editor.commands.setTextSelection({ from, to });
+        editor.view.dispatch(closeHistory(editor.state.tr));
+      });
+      expect(editor.state.selection.from).toBe(from);
+      expect(editor.state.selection.to).toBe(to);
+      fireEvent.keyDown(element, { key: "Enter", shiftKey });
+      expect(editor.getJSON()).toEqual({
+        type: "doc",
+        content: shiftKey
+          ? [
+              {
+                type: "paragraph",
+                content: [
+                  { type: "text", text: prefix },
+                  { type: "hardBreak" },
+                  { type: "text", text: suffix },
+                ],
+              },
+            ]
+          : [
+              { type: "paragraph", content: [{ type: "text", text: prefix }] },
+              { type: "paragraph", content: [{ type: "text", text: suffix }] },
+            ],
+      });
+      expect(editor.state.selection.from).toBe(nextCursor);
+      expect(editor.state.selection.empty).toBe(true);
+      expect(editor.state.selection.$from.depth).toBe(1);
+      expect(editor.state.selection.$from.parentOffset).toBe(shiftKey ? 3 : 0);
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(onModifierSubmit).not.toHaveBeenCalled();
+      act(() => expect(editor.commands.undo()).toBe(true));
+      expect(editor.getJSON()).toEqual(before);
+      expect(editor.state.selection.from).toBe(from);
+      expect(editor.state.selection.to).toBe(to);
+    },
+  );
+
+  it("delegates nested blockquote Enter to the native editor and preserves structure, cursor and undo", () => {
+    const { element, editor, onSubmit } = mountComposer(true, {
+      value: "> quoted tail",
+    });
+    const before = editor.getJSON();
+    act(() => editor.commands.setTextSelection(9));
+    fireEvent.keyDown(element, { key: "Enter" });
+    const quote = editor.state.doc.firstChild;
+    expect(quote?.type.name).toBe("blockquote");
+    expect(quote?.childCount).toBe(2);
+    expect(quote?.firstChild?.textContent).toBe("quoted ");
+    expect(quote?.lastChild?.textContent).toBe("tail");
+    expect(editor.state.selection.$from.depth).toBe(2);
+    expect(editor.state.selection.$from.parentOffset).toBe(0);
+    expect(editor.state.selection.from).toBe(11);
+    expect(onSubmit).not.toHaveBeenCalled();
+    act(() => expect(editor.commands.undo()).toBe(true));
+    expect(editor.getJSON()).toEqual(before);
+    expect(editor.state.selection.from).toBe(9);
+  });
+
+  it("keeps Shift+Enter's native quote hard break and existing trailing-break exit ahead of newline policy", () => {
+    const { element, editor, onSubmit } = mountComposer(true, {
+      value: "> quoted tail",
+    });
+    const before = editor.getJSON();
+    act(() => editor.commands.setTextSelection(13));
+    fireEvent.keyDown(element, { key: "Enter", shiftKey: true });
+    expect(editor.state.doc.firstChild?.firstChild?.lastChild?.type.name).toBe(
+      "hardBreak",
+    );
+    expect(editor.state.selection.$from.depth).toBe(2);
+    fireEvent.keyDown(element, { key: "Enter", shiftKey: true });
+    expect(editor.state.doc.firstChild?.type.name).toBe("blockquote");
+    expect(editor.state.doc.firstChild?.textContent).toBe("quoted tail");
+    expect(editor.state.doc.firstChild?.firstChild?.lastChild?.type.name).toBe(
+      "text",
+    );
+    expect(editor.state.selection.$from.depth).toBe(1);
+    expect(editor.state.selection.$from.parent.type.name).toBe("paragraph");
+    expect(editor.state.selection.$from.parentOffset).toBe(0);
+    expect(editor.state.selection.from).toBe(16);
+    expect(onSubmit).not.toHaveBeenCalled();
+    act(() => expect(editor.commands.undo()).toBe(true));
+    expect(editor.getJSON()).toEqual(before);
+    expect(editor.state.selection.from).toBe(13);
+  });
+
+  it("updates every mounted composer live without replacing editors or losing draft, attachments, selection or undo", async () => {
+    const harness = createComposerQueryHarness();
+    const first = mountComposer(
+      false,
+      {
+        value: "First draft",
+        attachments: {
+          items: [
+            {
+              type: "localFile",
+              name: "notes.txt",
+              path: "notes.txt",
+              sizeBytes: 1,
+            },
+          ],
+          onUpdate: vi.fn(),
+        },
+      },
+      harness,
+    );
+    await waitFor(() => expect(document.activeElement).toBe(first.element));
+    const second = mountComposer(false, { value: "Second draft" }, harness);
+    await waitFor(() => expect(document.activeElement).toBe(second.element));
+    const composers = [first, second];
+    const beforeEditing = composers.map((composer) =>
+      composer.editor.getJSON(),
+    );
+    for (const composer of composers) {
+      act(() => {
+        composer.editor.view.dispatch(closeHistory(composer.editor.state.tr));
+        composer.editor.commands.insertContent("!");
+        composer.editor.commands.setTextSelection({ from: 2, to: 5 });
+      });
+      expect(composer.editor.state.selection.from).toBe(2);
+      expect(composer.editor.state.selection.to).toBe(5);
+    }
+    const drafts = composers.map((composer) => composer.editor.getJSON());
+    for (const preference of [true, false, true]) {
+      act(() =>
+        harness.setGeneralSettings({ enterInsertsNewline: preference }),
+      );
+      await waitFor(() => {
+        for (const composer of composers) {
+          expect(composer.element.getAttribute("enterkeyhint")).toBe(
+            preference ? "enter" : "send",
+          );
+        }
+      });
+      for (const [index, composer] of composers.entries()) {
+        expect(
+          composer.view.container.querySelector('[contenteditable="true"]'),
+        ).toBe(composer.element);
+        expect(composer.element.editor).toBe(composer.editor);
+        expect(composer.editor.getJSON()).toEqual(drafts[index]);
+        expect(composer.editor.state.selection.from).toBe(2);
+        expect(composer.editor.state.selection.to).toBe(5);
+      }
+      expect(
+        within(first.view.container).getByRole("button", {
+          name: "Remove notes.txt",
+        }),
+      ).toBeTruthy();
+    }
+    for (const [index, composer] of composers.entries()) {
+      act(() => expect(composer.editor.commands.undo()).toBe(true));
+      expect(composer.editor.getJSON()).toEqual(beforeEditing[index]);
+      expect(composer.editor.state.doc.textContent).not.toContain("!");
+      act(() =>
+        composer.editor.commands.setTextSelection(
+          composer.editor.state.doc.content.size - 1,
+        ),
+      );
+      act(() => composer.editor.view.focus());
+      fireEvent.keyDown(composer.element, { key: "Enter" });
+      expect(composer.editor.state.doc.childCount).toBe(2);
+      expect(composer.onSubmit).not.toHaveBeenCalled();
+    }
+    act(() => harness.setGeneralSettings({ enterInsertsNewline: false }));
+    await waitFor(() => {
+      for (const composer of composers) {
+        expect(composer.element.getAttribute("enterkeyhint")).toBe("send");
+      }
+    });
+    for (const composer of composers) {
+      act(() => composer.editor.view.focus());
+      fireEvent.keyDown(composer.element, { key: "Enter" });
+      expect(composer.onSubmit).toHaveBeenCalledOnce();
+    }
+  });
 });

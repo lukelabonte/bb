@@ -24,7 +24,11 @@ import {
   setPluginSlotRegistrations,
 } from "@/lib/plugin-slots";
 import { registerComposerMenuPlugins } from "@/test/fixtures/composer-menu";
-import { makePluginRegistrationSet } from "@/test/fixtures/plugins";
+import {
+  createComposerQueryHarness,
+  makePluginRegistrationSet,
+  renderWithQueryClient,
+} from "@/test/fixtures/plugins";
 import { ComposerSendMenu } from "./ComposerSendMenu";
 import { MemoryRouter } from "react-router-dom";
 import {
@@ -177,27 +181,31 @@ describe("PromptBoxActionsMenu", () => {
           return () => listeners.delete(listener);
         },
       );
+      const { queryClient } = createComposerQueryHarness();
       render(
-        <MemoryRouter>
-          <PluginComposerHostProvider value={host}>
-            <PluginComposerViewProvider value={view}>
-              {menu === "plus" ? (
-                <ComposerPlusMenuSlot onAction={() => {}} />
-              ) : (
-                <ComposerSendMenu
-                  isPointerCoarse={false}
-                  includePluginContributions
-                  queue={false}
-                  hasInput
-                  canSubmit
-                  onSubmit={undefined}
-                >
-                  <button>Send</button>
-                </ComposerSendMenu>
-              )}
-            </PluginComposerViewProvider>
-          </PluginComposerHostProvider>
-        </MemoryRouter>,
+        renderWithQueryClient(
+          <MemoryRouter>
+            <PluginComposerHostProvider value={host}>
+              <PluginComposerViewProvider value={view}>
+                {menu === "plus" ? (
+                  <ComposerPlusMenuSlot onAction={() => {}} />
+                ) : (
+                  <ComposerSendMenu
+                    isPointerCoarse={false}
+                    includePluginContributions
+                    queue={false}
+                    hasInput
+                    canSubmit
+                    onSubmit={undefined}
+                  >
+                    <button>Send</button>
+                  </ComposerSendMenu>
+                )}
+              </PluginComposerViewProvider>
+            </PluginComposerHostProvider>
+          </MemoryRouter>,
+          queryClient,
+        ),
       );
       fireEvent.pointerDown(
         screen.getByRole("button", {

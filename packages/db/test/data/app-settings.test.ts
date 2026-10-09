@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { defaultAppSettings } from "@bb/domain";
 import {
+  createConnection,
   getAppKeybindingOverrides,
   getAppSettings,
   setAppKeybindingOverrides,
@@ -93,5 +94,30 @@ describe("app settings data", () => {
       ...defaultAppSettings,
       steerActiveThreadOnEnter: true,
     });
+  });
+
+  it("defaults Enter to submit for databases predating enterInsertsNewline", () => {
+    expect(getAppSettings(db).enterInsertsNewline).toBe(false);
+    db.$client.exec(
+      "INSERT INTO app_settings_values (key, value, updated_at) VALUES ('steerActiveThreadOnEnter', 'true', 1)",
+    );
+    expect(getAppSettings(db).enterInsertsNewline).toBe(false);
+    expect(getAppSettings(db).steerActiveThreadOnEnter).toBe(true);
+  });
+
+  it("persists Enter-as-newline and reloads the saved value", () => {
+    setAppSettings(db, { ...defaultAppSettings, enterInsertsNewline: true });
+    expect(getAppSettings(db).enterInsertsNewline).toBe(true);
+    const saved = db.$client.serialize();
+    db.$client.close();
+
+    db = createConnection(saved);
+    expect(getAppSettings(db).enterInsertsNewline).toBe(true);
+    setAppSettings(db, { ...getAppSettings(db), enterInsertsNewline: false });
+    const disabled = db.$client.serialize();
+    db.$client.close();
+
+    db = createConnection(disabled);
+    expect(getAppSettings(db).enterInsertsNewline).toBe(false);
   });
 });

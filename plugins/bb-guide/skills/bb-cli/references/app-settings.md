@@ -122,6 +122,8 @@ hide the navigation rail's destinations (see Navigation rail below).
   can be intentional when contexts do not overlap; the UI identifies reuse.
 - New Thread, New Window, New Tab, Close, and Settings in the desktop menu use
   the same resolved shortcuts as renderer commands.
+- The "Enter inserts a newline" switch lives on this settings page; see the
+  section below.
 - The complete default table is in `docs/configuration.md` in the bb source
   repository.
 
@@ -144,6 +146,27 @@ hide the navigation rail's destinations (see Navigation rail below).
 - Shift+Enter inserts a newline. On coarse-pointer touch devices, the
   software-keyboard Return path stays a newline; iPadOS WebKit preserves the
   Enter shortcuts for a connected Magic Keyboard.
+
+## Enter inserts a newline
+
+- `enterInsertsNewline` defaults to false. Set it with
+  `bb settings general enterInsertsNewline <true|false|on|off>`.
+- When enabled, Enter and Shift+Enter insert a newline in the native composers
+  instead of submitting. The primary submit shortcut (Command+Enter,
+  Ctrl+Enter on Windows and Linux) still runs the surface's primary submit
+  action, and its shifted variant still runs the alternate submit action when
+  one is assigned.
+- In a focused native composer with an alternate assigned, the enabled
+  preference gives the shifted chord precedence over Open terminal and other
+  app commands bound to that chord. Composer menus and typeahead still take
+  precedence over submission.
+- With the preference off or no alternate assigned, ordinary app-command
+  precedence stays unchanged. With no alternate, the shifted chord keeps its
+  non-submitting editor behavior when no app command handles it and never
+  falls back to primary submission.
+- Other app commands, message history, IME composition, touch software
+  keyboards, and the send button keep their behavior, and plugin-owned editors
+  are untouched.
 
 ## Archive confirmation
 

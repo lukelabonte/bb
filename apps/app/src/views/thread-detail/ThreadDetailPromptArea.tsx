@@ -104,6 +104,8 @@ import type { MachineProviderPresentation } from "@/components/plugin/MachinePro
 import type { WorkspaceCheckoutDisplay } from "@/lib/workspace-checkout-display";
 import { useComposerTextEffects } from "@/lib/composer-text-effects";
 import { useLatestRef } from "@/hooks/useLatestRef";
+import { useSystemConfig } from "@/hooks/queries/system-queries";
+import { modifierSubmitShortcutLabel } from "@/components/promptbox/modifier-submit-shortcut";
 import { useThreadCreationOptions } from "@/hooks/useThreadCreationOptions";
 import { useProjectDisplayName } from "@/hooks/queries/sidebar-navigation-query";
 import {
@@ -458,6 +460,11 @@ export function ThreadDetailPromptArea({
   composerFocusRequestNonce,
   thread,
 }: ThreadDetailPromptAreaProps) {
+  const enterInsertsNewline =
+    useSystemConfig().data?.generalSettings?.enterInsertsNewline ?? false;
+  const primarySubmitShortcut = enterInsertsNewline
+    ? modifierSubmitShortcutLabel()
+    : "Enter";
   const navigate = useImmediateRouteNavigate();
   const defaultExecutionOptionsQuery = useThreadDefaultExecutionOptions(
     thread.id,
@@ -1574,7 +1581,7 @@ export function ThreadDetailPromptArea({
         ? {
             submitLabel: "New thread",
             submitIcon: "MessageSquarePlus",
-            submitTitle: "Create new thread (Enter)",
+            submitTitle: `Create new thread (${primarySubmitShortcut})`,
           }
         : {}),
       compactPromptPlaceholder,
@@ -1594,6 +1601,7 @@ export function ThreadDetailPromptArea({
       isHandoffSelection,
       promptHistoryDrafts,
       promptPlaceholder,
+      primarySubmitShortcut,
       restoreHistoryDraft,
       promptDraft.setTextAndMentions,
       runtimeDisplayStatus,
@@ -2131,7 +2139,7 @@ export function ThreadDetailPromptArea({
           promptPlaceholder: "Edit message",
           submit: handleSentMessageEditSubmit,
           submitMode: sentMessageEditSubmitMode,
-          submitTitle: "Submit edit (Enter)",
+          submitTitle: `Submit edit (${primarySubmitShortcut})`,
           suppressPluginComposerCustomizations: true,
           textEffects: sentMessageComposerTextEffects,
           threadRuntimeDisplayStatus: runtimeDisplayStatus,
@@ -2151,6 +2159,7 @@ export function ThreadDetailPromptArea({
     isAttachingSentMessageFiles,
     sentMessagePendingUploads,
     projectId,
+    primarySubmitShortcut,
     inlinePromptActions,
     runtimeDisplayStatus,
     sentMessageAttachmentError,

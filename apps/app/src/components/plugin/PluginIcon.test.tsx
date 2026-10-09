@@ -119,7 +119,7 @@ it("uses a plugin-owned compact SVG before named icon hints", () => {
 });
 
 it("resolves every named branding.icon the shipped plugins declare", async () => {
-  const { readdir, readFile } = await import("node:fs/promises");
+  const { glob, readFile } = await import("node:fs/promises");
   const { dirname, join, resolve } = await import("node:path");
   const { fileURLToPath } = await import("node:url");
   const { isBuiltinIconName } = await import("@bb/shared-ui/icon");
@@ -128,16 +128,14 @@ it("resolves every named branding.icon the shipped plugins declare", async () =>
     dirname(fileURLToPath(import.meta.url)),
     "../../../../../plugins",
   );
-  const entries = await readdir(pluginsDir, { withFileTypes: true });
   const declared: Array<[string, string]> = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+  for await (const path of glob("*/package.json", { cwd: pluginsDir })) {
     const manifest: { bb?: { branding?: { icon?: string } } } = JSON.parse(
-      await readFile(join(pluginsDir, entry.name, "package.json"), "utf8"),
+      await readFile(join(pluginsDir, path), "utf8"),
     );
     const icon = manifest.bb?.branding?.icon;
     if (icon === undefined || icon.startsWith("./")) continue;
-    declared.push([entry.name, icon]);
+    declared.push([dirname(path), icon]);
   }
 
   expect(declared.length).toBeGreaterThan(0);

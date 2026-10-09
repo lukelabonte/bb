@@ -379,6 +379,19 @@ export function AppCommandProvider({ children }: { children: ReactNode }) {
     };
     const handlePaneNavigation = (event: KeyboardEvent) => {
       if (
+        event.key === "Enter" &&
+        event.shiftKey &&
+        !event.altKey &&
+        (isMacKeyboardPlatform(browserPlatform())
+          ? event.metaKey && !event.ctrlKey
+          : event.ctrlKey && !event.metaKey) &&
+        event.target instanceof HTMLElement &&
+        event.target.closest("[data-promptbox-editor-content] .ProseMirror") !==
+          null
+      ) {
+        return;
+      }
+      if (
         getShortcutCommand(event, [
           "panel.previousTab",
           "panel.nextTab",

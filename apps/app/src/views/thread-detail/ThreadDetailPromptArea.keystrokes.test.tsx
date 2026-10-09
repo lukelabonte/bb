@@ -35,9 +35,15 @@ import {
 import { LazyQueuedMessagesList } from "@/components/promptbox/banner/LazyQueuedMessagesList";
 import { getPromptDraftAccessor } from "@/hooks/usePromptDraftStorage";
 import { ThreadDetailPromptArea } from "./ThreadDetailPromptArea";
+import {
+  createComposerQueryHarness,
+  renderWithQueryClient,
+} from "@/test/fixtures/plugins";
 
 const mocks = vi.hoisted(() => ({
+  createQueuedMessageMutateAsync: vi.fn(),
   sendMessageMutateAsync: vi.fn(),
+  sendQueuedMessageMutateAsync: vi.fn(),
   shellProbeRenders: vi.fn(),
   updateQueuedMessageMutateAsync: vi.fn(),
 }));
@@ -52,31 +58,37 @@ vi.mock("@/components/promptbox/FollowUpPromptBox", () => ({
       message: string;
       onChangeMessage: (message: string, mentions: []) => void;
       onSubmit: () => void;
+      onModifierSubmit: () => void;
     } | null;
     pendingInteraction?: ReactNode;
     stack: ReactNode;
-  }) => (
-    <div data-testid="follow-up-prompt-box">
-      <div data-testid="prompt-stack">
-        {stack}
-        {pendingInteraction}
-      </div>
-      {composer ? (
-        <div hidden={pendingInteraction !== null}>
-          <input
-            aria-label="Composer message"
-            value={composer.message}
-            onChange={(event) =>
-              composer.onChangeMessage(event.currentTarget.value, [])
-            }
-          />
-          <button type="button" onClick={composer.onSubmit}>
-            Submit composer
-          </button>
+  }) => {
+    return (
+      <div data-testid="follow-up-prompt-box">
+        <div data-testid="prompt-stack">
+          {stack}
+          {pendingInteraction}
         </div>
-      ) : null}
-    </div>
-  ),
+        {composer ? (
+          <div hidden={pendingInteraction !== null}>
+            <input
+              aria-label="Composer message"
+              value={composer.message}
+              onChange={(event) =>
+                composer.onChangeMessage(event.currentTarget.value, [])
+              }
+            />
+            <button type="button" onClick={composer.onSubmit}>
+              Submit composer
+            </button>
+            <button type="button" onClick={composer.onModifierSubmit}>
+              Modifier composer
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  },
 }));
 
 vi.mock("@/components/promptbox/ThreadEnvironmentSummary", () => ({
@@ -227,11 +239,19 @@ vi.mock("@/hooks/mutations/thread-runtime-mutations", () => {
     useCancelThreadPlan: idleMutation,
     useClearThreadGoal: idleMutation,
     useCreateThread: idleMutation,
-    useCreateThreadQueuedMessage: idleMutation,
+    useCreateThreadQueuedMessage: () => ({
+      isPending: false,
+      mutateAsync: mocks.createQueuedMessageMutateAsync,
+    }),
     useDeleteThreadQueuedMessage: idleMutation,
     useReorderThreadQueuedMessage: idleMutation,
     useSetThreadQueuedMessageGroupBoundary: idleMutation,
-    useSendThreadQueuedMessage: idleMutation,
+    useSendThreadQueuedMessage: () => ({
+      isPending: false,
+      mutate: vi.fn(),
+      mutateAsync: mocks.sendQueuedMessageMutateAsync,
+      variables: null,
+    }),
     useStopThread: idleMutation,
     useUpdateThreadQueuedMessage: () => ({
       isPending: false,
@@ -293,10 +313,10 @@ function makeThread(id: string): ThreadWithRuntime {
   });
 }
 
-function makeQueuedMessage(): ThreadQueuedMessage {
+function makeQueuedMessage(threadId: string): ThreadQueuedMessage {
   return makeThreadQueuedMessage({
     id: "qmsg_1",
-    threadId: "thr_keystrokes",
+    threadId,
     content: [{ type: "text", text: "Already queued", mentions: [] }],
     model: "gpt-5",
     createdAt: 1,
@@ -359,11 +379,13 @@ function shellRenderCount(): number {
 interface RenderPromptAreaArgs {
   thread: ThreadWithRuntime;
   pendingInteractions?: readonly PendingInteraction[];
+  steer?: boolean;
 }
 
 function buildPromptArea({
   thread,
   pendingInteractions = [],
+  steer = false,
 }: RenderPromptAreaArgs) {
   return (
     <PluginComposerHostScopeProvider>
@@ -400,7 +422,7 @@ function buildPromptArea({
           isPending: false,
           mutateAsync: mocks.sendMessageMutateAsync,
         }}
-        steerActiveThreadOnEnter={false}
+        steerActiveThreadOnEnter={steer}
         thread={thread}
         workspaceChangedFilesSection={null}
         workspaceStatusPending={false}
@@ -410,7 +432,12 @@ function buildPromptArea({
 }
 
 function renderPromptArea(args: RenderPromptAreaArgs) {
-  return render(buildPromptArea(args));
+  return render(
+    renderWithQueryClient(
+      buildPromptArea(args),
+      createComposerQueryHarness().queryClient,
+    ),
+  );
 }
 
 function getBottomComposerInput(): HTMLInputElement {
@@ -429,6 +456,8 @@ beforeEach(() => {
   threadId = `thr_keystrokes_${threadCounter}`;
   queryMocks.queuedMessages = [];
   mocks.sendMessageMutateAsync.mockResolvedValue(undefined);
+  mocks.createQueuedMessageMutateAsync.mockResolvedValue(undefined);
+  mocks.sendQueuedMessageMutateAsync.mockResolvedValue(undefined);
   mocks.updateQueuedMessageMutateAsync.mockResolvedValue(undefined);
 });
 
@@ -520,7 +549,7 @@ describe("ThreadDetailPromptArea published composer host", () => {
   });
 
   it("swaps to a per-session stable host for inline queued-message edits and streams the inline draft", () => {
-    queryMocks.queuedMessages = [makeQueuedMessage()];
+    queryMocks.queuedMessages = [makeQueuedMessage(threadId)];
     renderPromptArea({ thread: makeThread(threadId) });
     const rendersAfterMount = shellRenderCount();
     const threadHost = observedShellHosts().at(-1);
@@ -557,4 +586,125 @@ describe("ThreadDetailPromptArea published composer host", () => {
     expect(observedShellHosts().at(-1)).toBe(threadHost);
     expect(screen.getByTestId("published-host-draft").textContent).toBe("");
   });
+});
+
+describe("ThreadDetailPromptArea submission callbacks", () => {
+  it.each([false, true] as const)(
+    "queues the active-thread draft through the queue callback with steer preference %s",
+    async (steer) => {
+      const thread = {
+        ...makeThread(threadId),
+        runtime: { displayStatus: "active" as const },
+      };
+      renderPromptArea({ thread, steer });
+      const input = getBottomComposerInput();
+      fireEvent.change(input, { target: { value: "Steer or queue" } });
+
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Submit composer" }),
+        );
+      });
+
+      expect(mocks.createQueuedMessageMutateAsync).toHaveBeenCalledTimes(1);
+      expect(
+        mocks.createQueuedMessageMutateAsync.mock.calls[0]?.[0],
+      ).toMatchObject({
+        id: threadId,
+        input: [{ type: "text", text: "Steer or queue", mentions: [] }],
+      });
+      expect(mocks.sendMessageMutateAsync).not.toHaveBeenCalled();
+      expect(getBottomComposerInput().value).toBe("");
+    },
+  );
+
+  it.each([false, true] as const)(
+    "steers the active draft through the modifier callback with steer preference %s",
+    async (steer) => {
+      const thread = {
+        ...makeThread(threadId),
+        runtime: { displayStatus: "active" as const },
+      };
+      queryMocks.queuedMessages = [makeQueuedMessage(threadId)];
+      renderPromptArea({ thread, steer });
+      fireEvent.change(getBottomComposerInput(), {
+        target: { value: "Steer this draft" },
+      });
+
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Modifier composer" }),
+        );
+      });
+
+      expect(mocks.sendMessageMutateAsync).toHaveBeenCalledTimes(1);
+      expect(mocks.sendMessageMutateAsync.mock.calls[0]?.[0]).toMatchObject({
+        id: threadId,
+        mode: "steer-if-active",
+        input: [{ type: "text", text: "Steer this draft", mentions: [] }],
+      });
+      expect(mocks.sendQueuedMessageMutateAsync).not.toHaveBeenCalled();
+      expect(mocks.createQueuedMessageMutateAsync).not.toHaveBeenCalled();
+      expect(getBottomComposerInput().value).toBe("");
+      expect(
+        getPromptDraftAccessor({
+          kind: "thread",
+          projectId: PROJECT_ID,
+          threadId,
+        }).getCurrent().text,
+      ).toBe("");
+    },
+  );
+
+  it.each([false, true] as const)(
+    "steers the queued head through the modifier callback when no draft exists with steer preference %s",
+    async (steer) => {
+      const thread = {
+        ...makeThread(threadId),
+        runtime: { displayStatus: "active" as const },
+      };
+      queryMocks.queuedMessages = [makeQueuedMessage(threadId)];
+      renderPromptArea({ thread, steer });
+
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Modifier composer" }),
+        );
+      });
+
+      expect(mocks.sendQueuedMessageMutateAsync).toHaveBeenCalledTimes(1);
+      expect(
+        mocks.sendQueuedMessageMutateAsync.mock.calls[0]?.[0],
+      ).toMatchObject({
+        id: threadId,
+        mode: "steer",
+        queuedMessageId: "qmsg_1",
+      });
+      expect(mocks.sendMessageMutateAsync).not.toHaveBeenCalled();
+      expect(mocks.createQueuedMessageMutateAsync).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true] as const)(
+    "sends an idle draft directly through the queue callback with steer preference %s",
+    async (steer) => {
+      const thread = makeThread(threadId);
+      renderPromptArea({ thread, steer });
+      const input = getBottomComposerInput();
+      fireEvent.change(input, { target: { value: "Idle send" } });
+
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Submit composer" }),
+        );
+      });
+
+      expect(mocks.sendMessageMutateAsync).toHaveBeenCalledTimes(1);
+      expect(mocks.sendMessageMutateAsync.mock.calls[0]?.[0]).toMatchObject({
+        id: threadId,
+        input: [{ type: "text", text: "Idle send", mentions: [] }],
+      });
+      expect(mocks.createQueuedMessageMutateAsync).not.toHaveBeenCalled();
+    },
+  );
 });

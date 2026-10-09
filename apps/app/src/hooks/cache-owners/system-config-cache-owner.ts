@@ -122,6 +122,13 @@ export function readCachedGeneralSettings(
     ?.generalSettings;
 }
 
+export function writeCachedSystemConfig(
+  queryClient: QueryClient,
+  config: SystemConfigResponse,
+): void {
+  queryClient.setQueryData(systemConfigQueryKey(), config);
+}
+
 export interface ExperimentsCacheTransaction {
   previous: Experiments | undefined;
 }

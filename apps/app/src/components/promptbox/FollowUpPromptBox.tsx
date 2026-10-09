@@ -24,6 +24,7 @@ import type {
 import type { ComposerView, PluginComposerScope } from "@get-bb/plugin-sdk";
 import type { ComposerTextEffectSource } from "@/lib/composer-text-effects";
 import { modifierSubmitShortcutLabel } from "./modifier-submit-shortcut";
+import { useSystemConfig } from "@/hooks/queries/system-queries";
 import { isKeyboardFocusTarget } from "@/components/layout/useMobileVisualViewportHeight";
 import { ComposerBannersSlot } from "@/components/plugin/PluginComposerBanners";
 import {
@@ -251,6 +252,11 @@ function FollowUpPromptBoxWithComposer({
   showScrollToBottomButton = true,
   pendingInteraction = null,
 }: FollowUpPromptBoxWithComposerProps) {
+  const enterInsertsNewline =
+    useSystemConfig().data?.generalSettings?.enterInsertsNewline ?? false;
+  const primarySubmitShortcut = enterInsertsNewline
+    ? modifierSubmitShortcutLabel()
+    : "Enter";
   const submitMode = composer.submitMode;
   const hasPendingInteraction =
     pendingInteraction !== null && pendingInteraction !== undefined;
@@ -609,7 +615,9 @@ function FollowUpPromptBoxWithComposer({
     ? composer.onModifierSubmit
     : undefined;
   const modifierSubmitHint = (action: "queue" | "steer"): string =>
-    onModifierSubmit ? `, ${modifierSubmitShortcutLabel()} to ${action}` : "";
+    onModifierSubmit || (enterInsertsNewline && steerOnPrimarySubmit)
+      ? `, ${modifierSubmitShortcutLabel(enterInsertsNewline)} to ${action}`
+      : "";
   const executionControlsDisabled =
     (executionReadOnly ?? false) || hasPendingInteraction;
   const footerStart = useMemo(
@@ -751,18 +759,18 @@ function FollowUpPromptBoxWithComposer({
             : canSubmit && composer.submitTitle !== undefined
               ? composer.submitTitle
               : isStopping
-                ? "Queue for after the stop (Enter)"
+                ? `Queue for after the stop (${primarySubmitShortcut})`
                 : canQueueFollowUp
                   ? steerOnPrimarySubmit
                     ? isSteeringWhenReady
-                      ? `Steer when ready (Enter)${modifierSubmitHint("queue")}`
-                      : `Steer current run (Enter)${modifierSubmitHint("queue")}`
-                    : `Queue follow-up (Enter)${modifierSubmitHint("steer")}`
+                      ? `Steer when ready (${primarySubmitShortcut})${modifierSubmitHint("queue")}`
+                      : `Steer current run (${primarySubmitShortcut})${modifierSubmitHint("queue")}`
+                    : `Queue follow-up (${primarySubmitShortcut})${modifierSubmitHint("steer")}`
                   : isLoadingExecutionOptions
                     ? "Loading models..."
                     : isUnavailable
                       ? "Unavailable"
-                      : "Submit (Enter)",
+                      : `Submit (${primarySubmitShortcut})`,
           isRunning: canStopRuntime,
         }}
         typeahead={typeahead}

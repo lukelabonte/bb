@@ -316,6 +316,8 @@ export function registerSystemRoutes(
         current.keepHistoryAfterContextClear,
       confirmThreadArchive:
         settings.confirmThreadArchive ?? current.confirmThreadArchive,
+      enterInsertsNewline:
+        settings.enterInsertsNewline ?? current.enterInsertsNewline,
       onboardingCompletedAt:
         settings.onboardingCompletedAt === undefined
           ? current.onboardingCompletedAt

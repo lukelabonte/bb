@@ -14,6 +14,11 @@ import { CompactLongPressMenu } from "@bb/shared-ui/compact-long-press-menu";
 import { PluginComposerPlusMenuEntry } from "@/components/plugin/PluginComposerActions";
 import { useResolvedComposerSendMenuItems } from "@/components/plugin/composer-slot-hooks";
 import { useOptionalPluginComposerView } from "@/components/plugin/plugin-composer-host";
+import { useSystemConfig } from "@/hooks/queries/system-queries";
+import {
+  modifierSubmitShortcutAria,
+  modifierSubmitShortcutLabel,
+} from "./modifier-submit-shortcut";
 
 export function ComposerSendMenu({
   children,
@@ -32,6 +37,8 @@ export function ComposerSendMenu({
   canSubmit: boolean;
   onSubmit: (() => void) | undefined;
 }) {
+  const enterInsertsNewline =
+    useSystemConfig().data?.generalSettings?.enterInsertsNewline ?? false;
   const isCompactViewport = useIsCompactViewport();
   const view = useOptionalPluginComposerView();
   const contributions = useResolvedComposerSendMenuItems(
@@ -50,12 +57,21 @@ export function ComposerSendMenu({
   const items = canSubmit ? (
     <>
       {onSubmit ? (
-        <DropdownMenuItem disabled={!canSubmit} onSelect={onSubmit}>
+        <DropdownMenuItem
+          disabled={!canSubmit}
+          onSelect={onSubmit}
+          aria-keyshortcuts={
+            enterInsertsNewline ? modifierSubmitShortcutAria(true) : undefined
+          }
+        >
           <Icon
             name={queue ? "ListEnd" : "CornerDownRight"}
             className={cn("size-4", queue && "-scale-x-100")}
           />
           {queue ? "Queue" : "Steer"}
+          {enterInsertsNewline
+            ? ` (${modifierSubmitShortcutLabel(true)})`
+            : null}
         </DropdownMenuItem>
       ) : null}
       {contributions.map((contribution) => (

@@ -29,6 +29,7 @@ function renderSection(overrides?: {
         onConfirmThreadArchiveChange={
           overrides?.onConfirmThreadArchiveChange ?? vi.fn()
         }
+        enterInsertsNewline={false}
         keepHistoryAfterContextClear={false}
         onKeepHistoryAfterContextClearChange={vi.fn()}
         desktopBrowserAvailable={overrides?.desktopBrowserAvailable ?? false}

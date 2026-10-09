@@ -50,6 +50,7 @@ import {
   SettingsWithControl,
 } from "@/components/ui/settings-section";
 import { AppCommandShortcutPill } from "@/components/commands/AppCommandShortcutHint";
+import { modifierSubmitShortcutLabel } from "@/components/promptbox/modifier-submit-shortcut";
 import { getBbDesktopInfo } from "@/lib/bb-desktop";
 
 const EMPTY_OVERRIDES: AppKeybindingOverrides = [];
@@ -748,6 +749,19 @@ export function KeyboardSettingsSection() {
             disabled={systemConfig.data === undefined}
             onCheckedChange={(showKeyboardHints) =>
               updateGeneralSettings.mutate({ showKeyboardHints })
+            }
+          />
+        </SettingsWithControl>
+        <SettingsWithControl
+          description={`Enter inserts a newline instead of submitting. ${modifierSubmitShortcutLabel()} submits and ${modifierSubmitShortcutLabel(true)} runs the alternate submit action when one is assigned. Turn off for Enter to submit and Shift+Enter to insert a newline.`}
+          label="Enter inserts a newline"
+        >
+          <Switch
+            aria-label="Enter inserts a newline"
+            checked={generalSettings.enterInsertsNewline}
+            disabled={systemConfig.data === undefined}
+            onCheckedChange={(enterInsertsNewline) =>
+              updateGeneralSettings.mutate({ enterInsertsNewline })
             }
           />
         </SettingsWithControl>

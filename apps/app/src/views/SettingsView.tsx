@@ -67,6 +67,7 @@ import { AiServicesSettingsSection } from "@/components/settings/AiServicesSetti
 import { CommunitySettingsSection } from "@/components/settings/CommunitySettingsSection";
 import { UpdatesSettingsSection } from "@/components/settings/UpdatesSettingsSection";
 import { KeyboardSettingsSection } from "@/components/settings/KeyboardSettingsSection";
+import { modifierSubmitShortcutLabel } from "@/components/promptbox/modifier-submit-shortcut";
 import { BrowserSettingsSection } from "@/components/settings/BrowserSettingsSection";
 import { MachinesSettingsSection } from "@/components/settings/MachinesSettingsSection";
 import { ProjectsSettingsSection } from "@/components/settings/ProjectsSettingsSection";
@@ -169,6 +170,7 @@ interface GeneralSettingsSectionProps {
   onShowGitChangesChange: (enabled: boolean) => void;
   confirmThreadArchive: boolean;
   onConfirmThreadArchiveChange: (enabled: boolean) => void;
+  enterInsertsNewline: boolean;
   keepHistoryAfterContextClear: boolean;
   onKeepHistoryAfterContextClearChange: (enabled: boolean) => void;
   desktopBrowserAvailable: boolean;
@@ -587,20 +589,25 @@ const NAVIGATE_TO_THREAD_AFTER_CREATE_SETTING_LABEL =
   "Navigate to threads on creation";
 const DIAGNOSTIC_EVENTS_SETTING_LABEL = "Show diagnostic events";
 const FOLLOW_UP_BEHAVIOR_SETTING_LABEL = "Default thread followup behavior";
-const FOLLOW_UP_BEHAVIOR_OPTIONS = [
-  {
-    steerOnEnter: false,
-    label: "Queue",
-    description:
-      "Enter adds a follow-up. It runs when the agent stops. Command+Enter (Ctrl+Enter on Windows and Linux) steers the run.",
-  },
-  {
-    steerOnEnter: true,
-    label: "Steer",
-    description:
-      "Enter steers the run now. Command+Enter (Ctrl+Enter on Windows and Linux) adds a follow-up for later.",
-  },
-] as const;
+function followUpBehaviorOptions(enterInsertsNewline: boolean) {
+  const submitShortcut = modifierSubmitShortcutLabel();
+  return [
+    {
+      steerOnEnter: false,
+      label: "Queue",
+      description: enterInsertsNewline
+        ? `Enter inserts a newline. ${submitShortcut} adds a follow-up that runs when the agent stops.`
+        : `Enter adds a follow-up. It runs when the agent stops. ${submitShortcut} steers the run.`,
+    },
+    {
+      steerOnEnter: true,
+      label: "Steer",
+      description: enterInsertsNewline
+        ? `Enter inserts a newline. ${submitShortcut} steers the run now.`
+        : `Enter steers the run now. ${submitShortcut} adds a follow-up for later.`,
+    },
+  ] as const;
+}
 const STREAMER_MODE_SETTING_LABEL = "Streamer mode";
 const MANAGED_BRANCH_PREFIX_SETTING_LABEL = "New branch prefix";
 const MANAGED_BRANCH_PREFIX_EXAMPLE_SLUG = "fix-login-flow-thr_ab12cd34ef";
@@ -853,6 +860,7 @@ export function GeneralSettingsSection({
   onShowGitChangesChange,
   confirmThreadArchive,
   onConfirmThreadArchiveChange,
+  enterInsertsNewline,
   keepHistoryAfterContextClear,
   onKeepHistoryAfterContextClearChange,
   desktopBrowserAvailable,
@@ -900,7 +908,11 @@ export function GeneralSettingsSection({
 
           <SettingsWithControl
             label={FOLLOW_UP_BEHAVIOR_SETTING_LABEL}
-            description="What Enter does in the prompt box while the thread runs."
+            description={
+              enterInsertsNewline
+                ? "What the submit shortcut does in the prompt box while the thread runs."
+                : "What Enter does in the prompt box while the thread runs."
+            }
           >
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -922,7 +934,7 @@ export function GeneralSettingsSection({
                 align="end"
                 className={cn(SETTINGS_DROPDOWN_CONTENT_CLASS, "max-w-72")}
               >
-                {FOLLOW_UP_BEHAVIOR_OPTIONS.map((option) => (
+                {followUpBehaviorOptions(enterInsertsNewline).map((option) => (
                   <DropdownMenuItem
                     key={option.label}
                     className="items-start"
@@ -1367,6 +1379,7 @@ export function SettingsView() {
           openLinksInAppBrowser={openLinksInAppBrowser}
           rewriteLocalhostLinks={rewriteLocalhostLinks}
           steerActiveThreadOnEnter={generalSettings.steerActiveThreadOnEnter}
+          enterInsertsNewline={generalSettings.enterInsertsNewline}
           onNavigateToThreadAfterCreateChange={setNavigateToThreadAfterCreate}
           onOpenLinksInAppBrowserChange={setOpenLinksInAppBrowser}
           onRewriteLocalhostLinksChange={setRewriteLocalhostLinks}

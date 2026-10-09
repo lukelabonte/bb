@@ -1,6 +1,15 @@
-import type { InstalledPlugin } from "@bb/server-contract";
+import { createElement, type ReactElement, type ReactNode } from "react";
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
+import type {
+  InstalledPlugin,
+  SystemConfigResponse,
+} from "@bb/server-contract";
 import type { PluginListItem } from "@/hooks/queries/plugin-settings-queries";
+import { writeCachedSystemConfig } from "@/hooks/cache-owners/system-config-cache-owner";
 import type { PluginRegistrationSet } from "@/lib/plugin-slots";
+import { createAppQueryClient } from "@/lib/query-client";
+import { systemConfigQueryKey } from "@/hooks/queries/query-keys";
+import { makeSystemConfig } from "@/test/fixtures/system-config";
 
 type PluginListItemOverrides = Omit<
   Partial<PluginListItem>,
@@ -137,4 +146,42 @@ export function makeInstalledPlugin(
     app: { ...plugin.app, ...overrides.app },
     handlerStats: { ...plugin.handlerStats, ...overrides.handlerStats },
   };
+}
+
+export function createComposerQueryHarness(): {
+  queryClient: QueryClient;
+  setGeneralSettings(
+    settings: Partial<SystemConfigResponse["generalSettings"]>,
+  ): void;
+} {
+  const queryClient = createAppQueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity, staleTime: Infinity },
+    },
+  });
+  writeCachedSystemConfig(queryClient, makeSystemConfig());
+
+  return {
+    queryClient,
+    setGeneralSettings(settings) {
+      const current = queryClient.getQueryData<SystemConfigResponse>(
+        systemConfigQueryKey(),
+      );
+      const config = current ?? makeSystemConfig();
+      writeCachedSystemConfig(queryClient, {
+        ...config,
+        generalSettings: {
+          ...config.generalSettings,
+          ...settings,
+        },
+      });
+    },
+  };
+}
+
+export function renderWithQueryClient(
+  ui: ReactNode,
+  queryClient: QueryClient,
+): ReactElement {
+  return createElement(QueryClientProvider, { client: queryClient }, ui);
 }

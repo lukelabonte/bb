@@ -15,6 +15,10 @@ import { LazyQueuedMessagesList } from "@/components/promptbox/banner/LazyQueued
 import type { FollowUpComposerProps } from "@/components/promptbox/FollowUpPromptBox";
 import type { PluginComposerHost } from "@/components/plugin/plugin-composer-host";
 import { getPromptDraftAccessor } from "@/hooks/usePromptDraftStorage";
+import {
+  createComposerQueryHarness,
+  renderWithQueryClient,
+} from "@/test/fixtures/plugins";
 import { EmbeddedThreadChat } from "./EmbeddedThreadChat";
 
 const mocks = vi.hoisted(() => ({
@@ -76,7 +80,11 @@ vi.mock("@/components/promptbox/FollowUpPromptBox", async () => {
     }: {
       composer: Pick<
         FollowUpComposerProps,
-        "message" | "onChangeMessage" | "onSubmit" | "submitMode"
+        | "message"
+        | "onChangeMessage"
+        | "onSubmit"
+        | "onModifierSubmit"
+        | "submitMode"
       >;
       pendingInteraction?: ReactNode;
       stack: ReactNode;
@@ -101,6 +109,9 @@ vi.mock("@/components/promptbox/FollowUpPromptBox", async () => {
         />
         <button type="button" onClick={composer.onSubmit}>
           Send
+        </button>
+        <button type="button" onClick={composer.onModifierSubmit}>
+          Modifier send
         </button>
         <BottomHostDraftProbe host={pluginComposerHost ?? null} />
       </div>
@@ -182,7 +193,7 @@ vi.mock("@/components/thread/timeline", () => ({
 }));
 
 vi.mock("@/components/ui/app-toast", () => ({
-  appToast: { error: vi.fn() },
+  appToast: { error: vi.fn(), message: vi.fn() },
 }));
 
 vi.mock("@/hooks/useThreadCreationOptions", () => ({
@@ -283,16 +294,6 @@ vi.mock("@/hooks/queries/thread-default-execution-options-query", () => ({
   }),
 }));
 
-vi.mock("@/hooks/queries/system-queries", () => ({
-  useSystemConfig: () => ({
-    data: {
-      generalSettings: {
-        steerActiveThreadOnEnter: false,
-      },
-    },
-  }),
-}));
-
 vi.mock("@/hooks/mutations/thread-runtime-mutations", () => ({
   useCreateThreadQueuedMessage: () => ({
     mutateAsync: mocks.createQueuedMessageMutateAsync,
@@ -385,8 +386,9 @@ function buildEmbeddedChat({
 
 function renderEmbeddedChat(
   options: Parameters<typeof buildEmbeddedChat>[0] = {},
+  queryClient = createComposerQueryHarness().queryClient,
 ) {
-  return render(buildEmbeddedChat(options));
+  return render(renderWithQueryClient(buildEmbeddedChat(options), queryClient));
 }
 
 describe("EmbeddedThreadChat", () => {
@@ -532,6 +534,88 @@ describe("EmbeddedThreadChat", () => {
     );
   });
 
+  it.each([false, true])(
+    "steers the active draft through the modifier callback with steer preference %s",
+    async (steer) => {
+      mocks.threadRuntimeDisplayStatus = "active";
+      mocks.queuedMessages = [{ id: "q1" }];
+      mocks.sendThreadMessageMutateAsync.mockReset().mockResolvedValue({
+        ok: true,
+        delivery: "sent",
+      });
+      const harness = createComposerQueryHarness();
+      harness.setGeneralSettings({ steerActiveThreadOnEnter: steer });
+      renderEmbeddedChat({}, harness.queryClient);
+      fireEvent.change(screen.getByTestId("embedded-chat-composer"), {
+        target: { value: "Modifier steer" },
+      });
+
+      fireEvent.click(screen.getByText("Modifier send"));
+
+      await vi.waitFor(() => {
+        expect(
+          mocks.sendThreadMessageMutateAsync,
+        ).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({
+            id: "thr_child",
+            mode: "steer-if-active",
+            input: [{ type: "text", text: "Modifier steer", mentions: [] }],
+          }),
+        );
+        expect(
+          screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
+        ).toBe("");
+      });
+      expect(mocks.createQueuedMessageMutateAsync).not.toHaveBeenCalled();
+      expect(mocks.sendQueuedMessageMutateAsync).not.toHaveBeenCalled();
+      expect(
+        getPromptDraftAccessor({
+          kind: "thread",
+          projectId: "proj-1",
+          threadId: "thr_child",
+        }).getCurrent().text,
+      ).toBe("");
+    },
+  );
+
+  it.each([false, true])(
+    "steers only the first queued message through the empty-draft modifier callback with steer preference %s",
+    async (steer) => {
+      mocks.threadRuntimeDisplayStatus = "active";
+      mocks.queuedMessages = [{ id: "q_first" }, { id: "q_second" }];
+      const harness = createComposerQueryHarness();
+      harness.setGeneralSettings({ steerActiveThreadOnEnter: steer });
+      renderEmbeddedChat({}, harness.queryClient);
+      expect(
+        screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
+      ).toBe("");
+
+      fireEvent.click(screen.getByText("Modifier send"));
+
+      await vi.waitFor(() => {
+        expect(
+          mocks.sendQueuedMessageMutateAsync,
+        ).toHaveBeenCalledExactlyOnceWith({
+          id: "thr_child",
+          mode: "steer",
+          queuedMessageId: "q_first",
+        });
+      });
+      expect(mocks.sendThreadMessageMutateAsync).not.toHaveBeenCalled();
+      expect(mocks.createQueuedMessageMutateAsync).not.toHaveBeenCalled();
+      expect(
+        screen.getByTestId<HTMLInputElement>("embedded-chat-composer").value,
+      ).toBe("");
+      expect(
+        getPromptDraftAccessor({
+          kind: "thread",
+          projectId: "proj-1",
+          threadId: "thr_child",
+        }).getCurrent().text,
+      ).toBe("");
+    },
+  );
+
   it("keeps queued messages adjacent to the composer", () => {
     mocks.queuedMessages = [{ id: "q1" }, { id: "q2" }];
     renderEmbeddedChat();
@@ -640,14 +724,25 @@ describe("EmbeddedThreadChat", () => {
 
   it("preserves the editor and queued messages through an interaction refresh", () => {
     mocks.queuedMessages = [{ id: "q1" }];
-    const view = renderEmbeddedChat({ threadId: "thr_side_chat" });
+    const harness = createComposerQueryHarness();
+    const view = render(
+      renderWithQueryClient(
+        buildEmbeddedChat({ threadId: "thr_side_chat" }),
+        harness.queryClient,
+      ),
+    );
     const composer = screen.getByTestId("embedded-chat-composer");
     const queue = screen.getByTestId("embedded-chat-queued-messages");
     expect(queue.dataset.sendDisabled).toBeUndefined();
     fireEvent.change(composer, { target: { value: "Keep this draft" } });
 
     mocks.pendingInteractionsIsFetching = true;
-    view.rerender(buildEmbeddedChat({ threadId: "thr_side_chat" }));
+    view.rerender(
+      renderWithQueryClient(
+        buildEmbeddedChat({ threadId: "thr_side_chat" }),
+        harness.queryClient,
+      ),
+    );
 
     expect(composer.hidden).toBe(false);
     expect(composer.dataset.submitMode).toBe("ready");
@@ -656,7 +751,12 @@ describe("EmbeddedThreadChat", () => {
     expect(screen.getByDisplayValue("Keep this draft")).toBe(composer);
 
     mocks.pendingInteractionsIsFetching = false;
-    view.rerender(buildEmbeddedChat({ threadId: "thr_side_chat" }));
+    view.rerender(
+      renderWithQueryClient(
+        buildEmbeddedChat({ threadId: "thr_side_chat" }),
+        harness.queryClient,
+      ),
+    );
 
     expect(composer.dataset.submitMode).toBe("ready");
     expect(queue.dataset.sendDisabled).toBeUndefined();
@@ -683,11 +783,15 @@ describe("EmbeddedThreadChat", () => {
       projectId: "proj-1",
       threadId: "thr_key",
     }).storageKey;
+    const harness = createComposerQueryHarness();
     const first = render(
-      buildEmbeddedChat({
-        threadId: "thr_key",
-        pluginComposerBottomScope: scope,
-      }),
+      renderWithQueryClient(
+        buildEmbeddedChat({
+          threadId: "thr_key",
+          pluginComposerBottomScope: scope,
+        }),
+        harness.queryClient,
+      ),
     );
     const firstHost = hostDraftMocks.latestHost!;
     expect(firstHost.textEffectKey).toBe(draftKey);
@@ -702,10 +806,13 @@ describe("EmbeddedThreadChat", () => {
     firstHost.setDraft({ text: "late result", mentions: [], attachments: [] });
 
     render(
-      buildEmbeddedChat({
-        threadId: "thr_key",
-        pluginComposerBottomScope: scope,
-      }),
+      renderWithQueryClient(
+        buildEmbeddedChat({
+          threadId: "thr_key",
+          pluginComposerBottomScope: scope,
+        }),
+        harness.queryClient,
+      ),
     );
     const secondHost = hostDraftMocks.latestHost!;
     expect(secondHost.textEffectKey).toBe(draftKey);
@@ -728,21 +835,28 @@ describe("EmbeddedThreadChat", () => {
 
     const scopeFor = (threadId: string) =>
       ({ kind: "thread", threadId }) as const;
+    const harness = createComposerQueryHarness();
     const view = render(
-      buildEmbeddedChat({
-        threadId: "thr_switch_a",
-        pluginComposerBottomScope: scopeFor("thr_switch_a"),
-      }),
+      renderWithQueryClient(
+        buildEmbeddedChat({
+          threadId: "thr_switch_a",
+          pluginComposerBottomScope: scopeFor("thr_switch_a"),
+        }),
+        harness.queryClient,
+      ),
     );
     expect(screen.getByTestId("embedded-host-draft").textContent).toBe(
       "alpha draft",
     );
 
     view.rerender(
-      buildEmbeddedChat({
-        threadId: "thr_switch_b",
-        pluginComposerBottomScope: scopeFor("thr_switch_b"),
-      }),
+      renderWithQueryClient(
+        buildEmbeddedChat({
+          threadId: "thr_switch_b",
+          pluginComposerBottomScope: scopeFor("thr_switch_b"),
+        }),
+        harness.queryClient,
+      ),
     );
     expect(screen.getByTestId("embedded-host-draft").textContent).toBe(
       "beta draft",
@@ -750,10 +864,13 @@ describe("EmbeddedThreadChat", () => {
     expect(hostDraftMocks.textAtNotify).toEqual(["beta draft"]);
 
     view.rerender(
-      buildEmbeddedChat({
-        threadId: "thr_switch_a",
-        pluginComposerBottomScope: scopeFor("thr_switch_a"),
-      }),
+      renderWithQueryClient(
+        buildEmbeddedChat({
+          threadId: "thr_switch_a",
+          pluginComposerBottomScope: scopeFor("thr_switch_a"),
+        }),
+        harness.queryClient,
+      ),
     );
     expect(screen.getByTestId("embedded-host-draft").textContent).toBe(
       "alpha draft",

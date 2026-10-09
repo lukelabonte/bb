@@ -2,6 +2,7 @@ import { VoiceInputButton } from "./VoiceInputButton";
 import { registerPaneComposerFocus } from "@/lib/pane-composer-focus";
 import type { PendingAttachmentUpload } from "./usePendingAttachmentUploads";
 import { registerThreadMentionDropTarget } from "@/lib/thread-mention-drop";
+import { defaultAppSettings, isMacKeyboardPlatform } from "@bb/domain";
 import type {
   PromptMentionCommandTrigger,
   PromptMentionResource,
@@ -12,6 +13,8 @@ import type { ThreadResponse } from "@bb/server-contract";
 import { QueryClientContext } from "@tanstack/react-query";
 import { useThreadTitleMentionResources } from "@/components/thread/ThreadTitleMentions";
 import { threadQueryKey } from "@/hooks/queries/query-keys";
+import { useSystemConfig } from "@/hooks/queries/system-queries";
+import { browserPlatform } from "@/lib/app-keybindings";
 import { sdk } from "@/lib/sdk";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
 import type { Node as ProseMirrorNode, Slice } from "@tiptap/pm/model";
@@ -192,6 +195,7 @@ import { QueuedEditorTypeaheadLayoutContext } from "./queued-editor-typeahead-la
 import {
   isModifierSubmitKeyEvent,
   modifierSubmitShortcutAria,
+  modifierSubmitShortcutLabel,
 } from "./modifier-submit-shortcut";
 
 import { ComposerSendMenu } from "./ComposerSendMenu";
@@ -348,6 +352,7 @@ function suppressTouchCompatibilityClick(ownerDocument: Document) {
 }
 
 interface PromptSubmitButtonProps {
+  ariaKeyshortcuts: string | undefined;
   canSubmit: boolean;
   className: string;
   disabledReason: string | undefined;
@@ -362,6 +367,7 @@ interface PromptSubmitButtonProps {
 }
 
 function PromptSubmitButton({
+  ariaKeyshortcuts,
   canSubmit,
   className,
   disabledReason,
@@ -385,6 +391,7 @@ function PromptSubmitButton({
       size={isCompact ? "icon" : "sm"}
       variant="default"
       aria-label={title}
+      aria-keyshortcuts={ariaKeyshortcuts}
       aria-busy={isBusy}
       disabled={!canSubmit}
       onPointerDown={(event) => {
@@ -1291,13 +1298,18 @@ export function PromptBoxInternal({
   focusEndKey,
 }: PromptBoxInternalProps) {
   const focusComposerShortcut = useAppCommandShortcut("composer.focus");
+  const { data: systemConfig } = useSystemConfig();
+  const enterInsertsNewline =
+    systemConfig?.generalSettings?.enterInsertsNewline ??
+    defaultAppSettings.enterInsertsNewline;
   const {
     isSubmitting = false,
     disabled: submitDisabled = false,
     disabledReason: submitDisabledReason,
     label: submitLabel,
     icon: submitIcon,
-    title: submitTitle = "Submit (Enter)",
+    title:
+      submitTitle = `Submit (${enterInsertsNewline ? modifierSubmitShortcutLabel() : "Enter"})`,
     isRunning = false,
     onStop,
     onModifierSubmit: onDefaultModifierSubmit,
@@ -1369,7 +1381,8 @@ export function PromptBoxInternal({
   };
   const isPointerCoarse = usePointerCoarse();
   const isIPadOSWebKitDevice = useMemo(isIPadOSWebKit, []);
-  const editorEnterKeyHint = isPointerCoarse ? "enter" : "send";
+  const editorEnterKeyHint =
+    isPointerCoarse || enterInsertsNewline ? "enter" : "send";
   const formRef = useRef<HTMLFormElement>(null);
   const typeaheadMenuRef = useRef<HTMLDivElement>(null);
   const reportQueuedEditorTypeaheadLayout = useContext(
@@ -2030,9 +2043,15 @@ export function PromptBoxInternal({
         attributes: {
           "aria-label": effectivePlaceholder,
           "data-placeholder": effectivePlaceholder,
-          ...(onModifierSubmit
-            ? { "aria-keyshortcuts": modifierSubmitShortcutAria() }
-            : {}),
+          ...(enterInsertsNewline
+            ? {
+                "aria-keyshortcuts": onModifierSubmit
+                  ? `${modifierSubmitShortcutAria()} ${modifierSubmitShortcutAria(true)}`
+                  : modifierSubmitShortcutAria(),
+              }
+            : onModifierSubmit
+              ? { "aria-keyshortcuts": modifierSubmitShortcutAria() }
+              : {}),
           autocomplete: "off",
           class: cn(
             "min-h-full whitespace-pre-wrap break-words outline-none",
@@ -2086,13 +2105,13 @@ export function PromptBoxInternal({
               (event.metaKey || event.ctrlKey) &&
               event.shiftKey &&
               event.key.toLowerCase() === "v";
+            if (_view.composing || event.isComposing || event.keyCode === 229) {
+              return handleEditorKeyDownRef.current(event);
+            }
             if (
               !_view.editable ||
               !isIPadOSWebKitDevice ||
-              !isIPadHardwareEnterCandidate(event) ||
-              _view.composing ||
-              event.isComposing ||
-              event.keyCode === 229
+              !isIPadHardwareEnterCandidate(event)
             ) {
               return false;
             }
@@ -2103,7 +2122,7 @@ export function PromptBoxInternal({
             ) {
               compositionEndedAtRef.current = Number.NEGATIVE_INFINITY;
               postCompositionKeyDownEvents.add(event);
-              return false;
+              return handleEditorKeyDownRef.current(event);
             }
 
             return handleEditorKeyDownRef.current(event, true);
@@ -3486,14 +3505,27 @@ export function PromptBoxInternal({
 
   const handleEditorKeyDown = useCallback(
     (event: KeyboardEvent, isOriginalIPadHardwareEnter = false): boolean => {
+      const composerOwnsAlternateSubmitShortcut =
+        enterInsertsNewline &&
+        Boolean(onModifierSubmit) &&
+        isModifierSubmitKeyEvent(event, true) &&
+        (isMacKeyboardPlatform(browserPlatform())
+          ? event.metaKey && !event.ctrlKey
+          : event.ctrlKey && !event.metaKey);
       if (
+        editorRef.current?.view.composing ||
         event.isComposing ||
         event.keyCode === 229 ||
         postCompositionKeyDownEvents.has(event)
       ) {
+        if (composerOwnsAlternateSubmitShortcut) event.stopPropagation();
         return false;
       }
-      if (dispatchAppCommandKey(event) || handleComposerMenuKeyDown(event)) {
+      if (
+        (!composerOwnsAlternateSubmitShortcut &&
+          dispatchAppCommandKey(event)) ||
+        handleComposerMenuKeyDown(event)
+      ) {
         return true;
       }
       const canSubmitWithEnterKey =
@@ -3642,7 +3674,31 @@ export function PromptBoxInternal({
         }
       }
 
-      if (isModifierSubmitKeyEvent(event) && onModifierSubmit) {
+      if (
+        enterInsertsNewline &&
+        isModifierSubmitKeyEvent(event, event.shiftKey)
+      ) {
+        const isPlatformSubmitModifier = isMacKeyboardPlatform(
+          browserPlatform(),
+        )
+          ? event.metaKey && !event.ctrlKey
+          : event.ctrlKey && !event.metaKey;
+        if (!isPlatformSubmitModifier) return false;
+        if (event.shiftKey && !onModifierSubmit) return false;
+        event.preventDefault();
+        if (event.shiftKey) {
+          submitModifierPrompt();
+        } else {
+          submitPrompt();
+        }
+        return true;
+      }
+
+      if (
+        !enterInsertsNewline &&
+        isModifierSubmitKeyEvent(event) &&
+        onModifierSubmit
+      ) {
         event.preventDefault();
         submitModifierPrompt();
         return true;
@@ -3669,7 +3725,7 @@ export function PromptBoxInternal({
         !event.metaKey &&
         !event.altKey &&
         !event.ctrlKey &&
-        (event.shiftKey || !canSubmitWithEnterKey);
+        (enterInsertsNewline || event.shiftKey || !canSubmitWithEnterKey);
       if (
         isPromptNewlineKey &&
         currentEditor &&
@@ -3678,6 +3734,8 @@ export function PromptBoxInternal({
         event.preventDefault();
         return true;
       }
+
+      if (enterInsertsNewline) return false;
 
       if (!canSubmitWithEnterKey) return false;
       const isSubmitKey = event.key === "Enter" && !event.shiftKey;
@@ -3698,6 +3756,7 @@ export function PromptBoxInternal({
       commandHasMore,
       commandIsLoadingMore,
       dispatchAppCommandKey,
+      enterInsertsNewline,
       handleComposerMenuKeyDown,
       history,
       isPointerCoarse,
@@ -4106,6 +4165,11 @@ export function PromptBoxInternal({
                         }
                       >
                         <PromptSubmitButton
+                          ariaKeyshortcuts={
+                            enterInsertsNewline
+                              ? modifierSubmitShortcutAria()
+                              : undefined
+                          }
                           canSubmit={canSubmit}
                           icon={submitIcon}
                           label={submitLabel}

@@ -33,6 +33,7 @@ import {
 } from "../../.ladle/settings-story-fixtures";
 import type { ThemePreference } from "@/hooks/useTheme";
 import type { AudioInputDeviceOption } from "@/hooks/useAudioInputDevices";
+import { useSystemConfig } from "@/hooks/queries/system-queries";
 import { useAudioInputDevicePreferenceValue } from "@/lib/audio-input-device-preference";
 import {
   SETTINGS_MACHINE_ROUTE_PATH,
@@ -195,6 +196,7 @@ function GeneralSettingsStory({
   desktopBrowserAvailable?: boolean;
 }) {
   const state = useSettingsStoryState();
+  const { data: systemConfig } = useSystemConfig();
 
   return (
     <>
@@ -203,6 +205,10 @@ function GeneralSettingsStory({
         onShowGitChangesChange={state.setShowGitChanges}
         confirmThreadArchive={state.confirmThreadArchive}
         onConfirmThreadArchiveChange={state.setConfirmThreadArchive}
+        enterInsertsNewline={
+          systemConfig?.generalSettings.enterInsertsNewline ??
+          defaultAppSettings.enterInsertsNewline
+        }
         keepHistoryAfterContextClear={state.keepHistoryAfterContextClear}
         onKeepHistoryAfterContextClearChange={
           state.setKeepHistoryAfterContextClear

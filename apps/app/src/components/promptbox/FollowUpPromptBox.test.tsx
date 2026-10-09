@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => {
     scrollToBottom: vi.fn(),
     permissionModePicker: vi.fn(),
     voiceState: "idle" as "idle" | "recording" | "transcribing" | "error",
+    generalSettings: {} as Record<string, unknown>,
   };
   return Object.assign(values, {});
 });
@@ -57,6 +58,7 @@ vi.mock("@bb/shared-ui/hooks/use-pointer-coarse", () => ({
 vi.mock("@/hooks/queries/system-queries", () => ({
   useSystemConfig: () => ({
     data: {
+      generalSettings: mocks.generalSettings,
       keybindings: [
         {
           command: "composer.focus",
@@ -117,8 +119,6 @@ vi.mock("@/components/promptbox/PromptBoxInternal", async () => {
       };
       submission?: {
         onModifierSubmit?: () => void;
-        swapSubmitActions?: boolean;
-        showModifierSubmitAction?: boolean;
         title?: string;
       };
       suppressPluginComposerCustomizations?: boolean;
@@ -168,11 +168,7 @@ vi.mock("@/components/promptbox/PromptBoxInternal", async () => {
           <button
             type="button"
             onClick={(event) => {
-              if (submission?.swapSubmitActions) {
-                submission.onModifierSubmit?.();
-              } else {
-                onSubmit();
-              }
+              onSubmit();
               if (
                 blurOnPointerSubmit &&
                 event.detail > 0 &&
@@ -187,12 +183,7 @@ vi.mock("@/components/promptbox/PromptBoxInternal", async () => {
           <button
             type="button"
             title={submission?.title}
-            data-show-modifier-action={submission?.showModifierSubmitAction}
-            onClick={
-              submission?.swapSubmitActions
-                ? onSubmit
-                : submission?.onModifierSubmit
-            }
+            onClick={submission?.onModifierSubmit}
           >
             Modifier submit
           </button>
@@ -344,6 +335,7 @@ beforeEach(() => {
   mocks.isCompactViewport = false;
   mocks.isPointerCoarse = false;
   mocks.voiceState = "idle";
+  mocks.generalSettings = {};
   resizeObserverCallback = null;
   vi.stubGlobal(
     "ResizeObserver",
@@ -794,20 +786,9 @@ describe("FollowUpPromptBox", () => {
     expect(onEscape).toHaveBeenCalledOnce();
   });
 
-  it.each([
-    {
-      setting: false,
-      primaryAction: "queue",
-      modifierAction: "steer",
-    },
-    {
-      setting: true,
-      primaryAction: "steer",
-      modifierAction: "queue",
-    },
-  ] as const)(
-    "routes Enter/click to $primaryAction and Command+Enter to $modifierAction when steer-on-Enter is $setting",
-    ({ setting, primaryAction, modifierAction }) => {
+  it.each([false, true])(
+    "keeps queued drafts anchored and scrolls after immediate submission with steer-on-Enter %s",
+    (steerOnEnter) => {
       const props = createFollowUpPromptBoxProps({
         kind: "queue",
         onStop: vi.fn(),
@@ -815,43 +796,22 @@ describe("FollowUpPromptBox", () => {
       if (!props.composer) {
         throw new Error("Expected follow-up composer props");
       }
-      props.composer.steerActiveThreadOnEnter = setting;
+      props.composer.steerActiveThreadOnEnter = steerOnEnter;
       render(<FollowUpPromptBox {...props} />);
 
       fireEvent.click(screen.getByText("Submit"));
-      const expectedPrimary =
-        primaryAction === "queue"
-          ? props.composer.onSubmit
-          : props.composer.onModifierSubmit;
-      const expectedModifier =
-        modifierAction === "queue"
-          ? props.composer.onSubmit
-          : props.composer.onModifierSubmit;
-      expect(expectedPrimary).toHaveBeenCalledOnce();
-      expect(expectedModifier).not.toHaveBeenCalled();
-      expect(mocks.scrollToBottom).toHaveBeenCalledTimes(
-        primaryAction === "steer" ? 1 : 0,
-      );
+
+      expect(props.composer.onSubmit).toHaveBeenCalledOnce();
+      expect(props.composer.onModifierSubmit).not.toHaveBeenCalled();
+      expect(mocks.scrollToBottom).not.toHaveBeenCalled();
 
       fireEvent.click(screen.getByText("Modifier submit"));
-      expect(expectedModifier).toHaveBeenCalledOnce();
+
+      expect(props.composer.onModifierSubmit).toHaveBeenCalledOnce();
+      expect(props.composer.onSubmit).toHaveBeenCalledOnce();
       expect(mocks.scrollToBottom).toHaveBeenCalledOnce();
-      expect(
-        screen
-          .getByText("Modifier submit")
-          .getAttribute("data-show-modifier-action"),
-      ).toBe("true");
     },
   );
-
-  it("keeps save shortcuts without offering an alternate send action in a ready editor", () => {
-    const props = createFollowUpPromptBoxProps({ kind: "ready" });
-    render(<FollowUpPromptBox {...props} />);
-    const modifier = screen.getByText("Modifier submit");
-    expect(modifier.getAttribute("data-show-modifier-action")).toBe("false");
-    fireEvent.click(modifier);
-    expect(props.composer?.onModifierSubmit).toHaveBeenCalledOnce();
-  });
 
   it.each([
     { setting: false, title: "Queue follow-up (Enter), Ctrl + Enter to steer" },

@@ -569,6 +569,27 @@ newline and the submit button sends.
 iPadOS WebKit additionally preserves the Enter and Command+Enter shortcuts
 above for a connected Magic Keyboard.
 
+The "Enter inserts a newline" switch in Settings → Keyboard defaults to off and
+keeps that behavior. When on, Enter and Shift+Enter both insert a newline in
+the native composers (new thread, follow-up, the inline queued-message and
+sent-message editors, and embedded chat). The primary submit shortcut
+(Command+Enter, Ctrl+Enter on Windows and Linux) still runs the surface's
+primary submit action, and its shifted variant still runs the surface's
+alternate submit action when one is assigned. In a focused native composer
+with an alternate assigned, the shifted chord takes precedence over Open
+terminal and other app commands bound to that chord. Composer menus and
+typeahead still take precedence over submission. With the preference off or
+no alternate assigned, ordinary app-command precedence stays unchanged; with
+no alternate, the shifted chord keeps its non-submitting editor behavior
+when no app command handles it and never falls back to primary submission.
+Other app commands, message history, IME composition, touch software
+keyboards, and the send button keep their current behavior, and plugin-owned
+editors are untouched. The preference is stored server-side and applies live
+to every connected client; settings saved before the field existed pick up the
+off default. Set it with `bb settings general enterInsertsNewline <true|false>`
+or `bb.sdk.system.updateGeneralSettings` using `enterInsertsNewline`. Older
+clients that omit the field preserve the saved value.
+
 ## Themes
 
 `bb theme` controls CSS-variable overrides for the app palette and typography.
@@ -602,7 +623,9 @@ continue to update the default. Clearing a shortcut explicitly disables that
 command. Command context and native-only availability remain server-owned and
 are not editable. Actions supported by both clients use the same resolved
 bindings in the browser and desktop app; browsers may still reserve some chords
-before bb receives them.
+before bb receives them. The "Enter inserts a newline" preference at the top
+of this page changes what Enter does in the composers; see the composer
+section above for its exact behavior.
 
 `Mod` means Command on macOS and Control on Windows/Linux. Numbered thread and
 pane shortcuts follow Slack's browser-safe convention: web uses
@@ -708,7 +731,9 @@ current model's supported efforts in canonical low-to-high rank order, not the
 provider response order. The cycle shortcuts act only from the active composer
 or an open picker; unrelated editable controls retain their Option-composed
 character input. A configured app shortcut takes precedence in editable
-controls; when no matching command handles a chord, the control retains its
+controls, except for the shifted submit chord in a focused native composer
+when "Enter inserts a newline" is on and an alternate submit action is
+assigned. When no matching command handles a chord, the control retains its
 native behavior.
 
 The desktop application menu uses the same resolved bindings for New Thread,

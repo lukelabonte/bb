@@ -158,6 +158,21 @@ reversed. Shift+Enter inserts a newline. On coarse-pointer touch devices, the
 software-keyboard Return path inserts a newline. iPadOS WebKit preserves these
 Enter shortcuts for a connected Magic Keyboard.
 
+Settings → Keyboard also includes `enterInsertsNewline`, which defaults to
+false. Turning it on makes Enter and Shift+Enter insert a newline in the
+native composers instead of submitting. The primary submit shortcut
+(Command+Enter, Ctrl+Enter on Windows and Linux) still runs the surface's
+primary submit action, and its shifted variant still runs the alternate
+submit action when one is assigned. In a focused native composer with an
+alternate assigned, the shifted chord takes precedence over Open terminal
+and other app commands bound to that chord. Composer menus and typeahead
+still take precedence over submission. With the preference off or no
+alternate assigned, ordinary app-command precedence stays unchanged; with
+no alternate, the shifted chord keeps its non-submitting editor behavior
+when no app command handles it and never falls back to primary submission.
+Set it with
+`bb settings general enterInsertsNewline <true|false>`.
+
 Settings → General includes `confirmThreadArchive`, which defaults to true.
 Set `bb settings general confirmThreadArchive false` to archive parent and
 child threads without the confirmation popup. The toast still offers Undo.
@@ -264,6 +279,8 @@ Bindings for non-native actions apply in browser and desktop clients. Command
 contexts and native-only availability remain server-owned, and desktop menu
 accelerators for New Thread, New Window, New Tab, Close, and Settings use the
 same resolved bindings. The complete default table is in docs/configuration.md.
+The same page's "Enter inserts a newline" switch (see Server-backed General
+settings above) decides whether Enter submits or inserts a newline.
 
   bb settings keyboard list
   bb settings keyboard hints <true|false>
