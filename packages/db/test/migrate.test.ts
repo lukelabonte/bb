@@ -8,6 +8,7 @@ import {
   dropIdleLifecycleIndexes,
   rewindThreadPruningWork,
   dropMarketplaceSourceGitSubdirectoryColumn,
+  dropPromptTemplateOverridesTable,
   dropQueuedMessageEditHeldUntilColumn,
 } from "./helpers/rewind.js";
 import { defaultAppSettings } from "@bb/domain";
@@ -296,6 +297,7 @@ function dropThreadConversationOutlinesTable(db: DbConnection): void {
 function dropRewindAddedTables(db: DbConnection): void {
   rewindEnvironmentRowFactsMigration(db);
   rewindEnvironmentProvidersMigration(db);
+  dropPromptTemplateOverridesTable(db);
   dropThreadConversationOutlinesTable(db);
   db.$client.prepare("DROP TABLE IF EXISTS thread_tabs").run();
   db.$client.prepare("DROP TABLE IF EXISTS automation_runs").run();
@@ -1517,6 +1519,7 @@ function runThreadPinningMigration(db: DbConnection): void {
 }
 
 function deleteDeferredCleanupMigrationRows(db: DbConnection): void {
+  dropPromptTemplateOverridesTable(db);
   db.$client
     .prepare<DeleteMigrationsParameters>(
       `
@@ -2416,6 +2419,7 @@ describe("migrate", () => {
           "DELETE FROM __drizzle_migrations WHERE created_at >= ?",
         )
         .run(permissionModesMigrationWhen);
+      dropPromptTemplateOverridesTable(db);
       rewindEnvironmentRowFactsMigration(db);
       rewindEnvironmentProvidersMigration(db);
       dropSideChatPluginExperimentColumn(db);
@@ -2594,6 +2598,7 @@ describe("migrate", () => {
           "DELETE FROM __drizzle_migrations WHERE created_at >= ?",
         )
         .run(threadSectionsRepairMigrationWhen);
+      dropPromptTemplateOverridesTable(db);
       rewindEnvironmentRowFactsMigration(db);
       rewindEnvironmentProvidersMigration(db);
       dropSideChatPluginExperimentColumn(db);
@@ -2737,6 +2742,7 @@ describe("migrate", () => {
           `,
         )
         .run(threadTypeRemovalMigrationWhen);
+      dropPromptTemplateOverridesTable(db);
       dropPost0023Tables(db);
       restoreEnvironmentCleanupModeColumn(db);
       restoreEnvironmentCleanupRequestedAtColumn(db);
@@ -4537,6 +4543,7 @@ describe("migrate", () => {
           "DELETE FROM __drizzle_migrations WHERE created_at >= ?",
         )
         .run(eventParentToolCallMigrationWhen);
+      dropPromptTemplateOverridesTable(db);
       db.$client.exec(`
         INSERT INTO events (
           id, thread_id, scope_kind, turn_id, sequence, type, item_id, item_kind, data, created_at
@@ -4627,6 +4634,7 @@ describe("environment providers migration", () => {
     db.$client.prepare("DROP TABLE IF EXISTS ui_preference_defaults").run();
     db.$client.prepare("DROP TABLE ui_preferences").run();
     db.$client.prepare("DROP TABLE retained_event_outputs").run();
+    dropPromptTemplateOverridesTable(db);
     rewindEnvironmentRowFactsMigration(db);
     rewindEnvironmentProvidersMigration(db);
     dropQueuedMessageAttemptColumns(db);
@@ -5058,6 +5066,7 @@ describe("environment and thread startup ownership migration", () => {
             "DELETE FROM __drizzle_migrations WHERE created_at >= ?",
           )
           .run(environmentProvisioningMigrationWhen);
+        dropPromptTemplateOverridesTable(db);
         db.$client.exec(`
         INSERT INTO hosts (id, name, type, created_at, updated_at) VALUES ('host_ownership', 'test', 'persistent', 1, 1);
         INSERT INTO projects (id, name, created_at, updated_at) VALUES ('proj_ownership', 'test', 1, 1);

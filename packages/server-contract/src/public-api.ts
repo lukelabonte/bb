@@ -307,6 +307,13 @@ import type {
   UpdateUiPreferenceRequest,
 } from "./api/ui-preferences.js";
 import { updateUiPreferenceRequestSchema } from "./api/ui-preferences.js";
+import type {
+  PromptTemplateResponse,
+  PromptTemplatesResponse,
+  SavePromptTemplateRequest,
+  SavePromptTemplateResponse,
+} from "./api/prompt-templates.js";
+import { savePromptTemplateRequestSchema } from "./api/prompt-templates.js";
 import {
   closeTerminalRequestSchema,
   copyProjectAttachmentsRequestSchema,
@@ -1987,6 +1994,41 @@ export const publicApiRoutes = {
       request: noRequest<PathUiPreferenceKey>(),
       response: [
         jsonResponse<UiPreferenceResponse>(),
+        jsonResponse<ApiError>({ status: 404 }),
+      ],
+    }),
+    promptTemplates: defineRoute({
+      path: "/settings/prompts",
+      method: "get",
+      request: noRequest(),
+      response: jsonResponse<PromptTemplatesResponse>(),
+    }),
+    promptTemplate: defineRoute({
+      path: "/settings/prompts/:id",
+      method: "get",
+      request: noRequest<PathId>(),
+      response: [
+        jsonResponse<PromptTemplateResponse>(),
+        jsonResponse<ApiError>({ status: 404 }),
+      ],
+    }),
+    savePromptTemplate: defineRoute({
+      path: "/settings/prompts/:id",
+      method: "put",
+      request: jsonRequest<PathId, SavePromptTemplateRequest>(
+        savePromptTemplateRequestSchema,
+      ),
+      response: [
+        jsonResponse<SavePromptTemplateResponse>(),
+        jsonResponse<ApiError>({ status: 404 }),
+      ],
+    }),
+    resetPromptTemplate: defineRoute({
+      path: "/settings/prompts/:id",
+      method: "delete",
+      request: noRequest<PathId>(),
+      response: [
+        jsonResponse<PromptTemplateResponse>(),
         jsonResponse<ApiError>({ status: 404 }),
       ],
     }),

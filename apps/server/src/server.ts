@@ -32,6 +32,7 @@ import { registerProjectRoutes } from "./routes/projects.js";
 import { registerThreadSectionRoutes } from "./routes/thread-sections.js";
 import { registerSystemRoutes } from "./routes/system.js";
 import { registerUiPreferenceRoutes } from "./routes/ui-preferences.js";
+import { registerPromptTemplateRoutes } from "./routes/prompt-templates.js";
 import { registerTerminalRoutes } from "./routes/terminals.js";
 import { registerThreadRoutes } from "./routes/threads/index.js";
 import { registerQueueRoutes } from "./routes/queue.js";
@@ -886,6 +887,7 @@ export function createApp(
   registerQueueRoutes(publicApi, deps);
   registerSystemRoutes(publicApi, deps, pluginService);
   registerUiPreferenceRoutes(publicApi, deps);
+  registerPromptTemplateRoutes(publicApi, deps);
   const pluginInstallJobs = createPluginInstallJobs({
     notifyChanged: () => deps.hub.notifySystem(["plugin-install-jobs-changed"]),
   });

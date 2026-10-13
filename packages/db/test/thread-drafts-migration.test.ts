@@ -14,6 +14,7 @@ import {
   dropIdleLifecycleIndexes,
   rewindThreadPruningWork,
   dropMarketplaceSourceGitSubdirectoryColumn,
+  dropPromptTemplateOverridesTable,
   dropQueuedMessageEditHeldUntilColumn,
 } from "./helpers/rewind.js";
 
@@ -79,6 +80,7 @@ it.each([false, true])(
         `INSERT INTO plugins (id, source, provenance, source_kind, source_builtin_name, root_dir, version, installed_at, updated_at)
          VALUES ('drafts', 'builtin:drafts', 'builtin', 'builtin', 'drafts', '/tmp/drafts', '0.1.0', 1, 1)`,
       );
+      dropPromptTemplateOverridesTable(db);
       db.$client
         .prepare("DELETE FROM __drizzle_migrations WHERE created_at >= ?")
         .run(THREAD_DRAFTS_MIGRATION_TIMESTAMP);

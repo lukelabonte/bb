@@ -145,6 +145,13 @@ export {
   replaceStoredUiPreference,
   type StoredUiPreference,
 } from "./ui-preferences.js";
+export {
+  deleteStoredPromptTemplateOverride,
+  getStoredPromptTemplateOverride,
+  listStoredPromptTemplateOverrides,
+  upsertStoredPromptTemplateOverride,
+  type StoredPromptTemplateOverride,
+} from "./prompt-template-overrides.js";
 export { getExperiments, setExperiments } from "./experiments.js";
 export {
   deleteInstalledPlugin,

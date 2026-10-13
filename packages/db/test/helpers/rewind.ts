@@ -43,6 +43,10 @@ export function dropQueuedMessageEditHeldUntilColumn(db: DbConnection): void {
   }
 }
 
+export function dropPromptTemplateOverridesTable(db: DbConnection): void {
+  db.$client.prepare("DROP TABLE IF EXISTS prompt_template_overrides").run();
+}
+
 export function dropMarketplaceSourceGitSubdirectoryColumn(
   db: DbConnection,
 ): void {

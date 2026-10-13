@@ -236,6 +236,16 @@ export const uiPreferences = sqliteTable("ui_preferences", {
   updatedAt: integer("updated_at").notNull(),
 });
 
+export const promptTemplateOverrides = sqliteTable(
+  "prompt_template_overrides",
+  {
+    templateId: text("template_id").primaryKey(),
+    body: text("body").notNull(),
+    basedOnDefaultHash: text("based_on_default_hash").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+);
+
 export const appSettings = sqliteTable("app_settings", {
   id: text("id").primaryKey(),
   caffeinate: integer("caffeinate", { mode: "boolean" })
