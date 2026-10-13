@@ -1,11 +1,39 @@
 import { Command } from "commander";
 import { createGuideArea } from "@bb/sdk/node";
 import { action, CliUsageError } from "../action.js";
+import { createCliBbSdk } from "../client.js";
 import { CORE_COMMAND_GROUPS } from "../command-groups.js";
 import { outputJson } from "./helpers.js";
 
 interface GuideCommandOptions {
   json?: boolean;
+}
+
+const GUIDE_PROMPT_OVERRIDE_TIMEOUT_MS = 2_000;
+
+async function fetchGuidePromptOverrides(
+  getUrl: (() => string) | undefined,
+): Promise<ReadonlyMap<string, string> | undefined> {
+  const serverUrl = getUrl?.();
+  if (serverUrl === undefined || serverUrl.length === 0) {
+    return undefined;
+  }
+  try {
+    const { templates } = await createCliBbSdk(
+      serverUrl,
+    ).system.experimental_prompts.list({
+      signal: AbortSignal.timeout(GUIDE_PROMPT_OVERRIDE_TIMEOUT_MS),
+    });
+    const overrides = new Map<string, string>();
+    for (const template of templates) {
+      if (template.overrideBody !== null) {
+        overrides.set(template.id, template.overrideBody);
+      }
+    }
+    return overrides;
+  } catch {
+    return undefined;
+  }
 }
 
 export interface GuideCommandIndexEntry {
@@ -90,7 +118,10 @@ function formatCommandIndexLine(
   return `${head}${options}\n    ${entry.description}`;
 }
 
-export function registerGuideCommand(program: Command): void {
+export function registerGuideCommand(
+  program: Command,
+  getUrl?: () => string,
+): void {
   program
     .command("guide [chapter] [group]")
     .description(
@@ -118,7 +149,10 @@ export function registerGuideCommand(program: Command): void {
             }
             return;
           }
-          const rendered = createGuideArea().render({ chapter });
+          const overrides = await fetchGuidePromptOverrides(getUrl);
+          const rendered = createGuideArea(
+            overrides === undefined ? {} : { overrides },
+          ).render({ chapter });
           if (chapter) {
             if (outputJson(opts, rendered)) return;
             console.log(rendered.content);

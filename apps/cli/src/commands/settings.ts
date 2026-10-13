@@ -25,12 +25,14 @@ import {
 } from "@bb/domain";
 import { BbHttpError } from "@bb/sdk";
 import type {
+  PromptTemplatesResponse,
   SystemAiServicesResponse,
   SystemProviderInfo,
 } from "@bb/server-contract";
 import { action } from "../action.js";
 import { createCliBbSdk } from "../client.js";
 import { columnWidths, printBorderlessTable } from "../table.js";
+import { requireTextInput, TEXT_FILE_HELP_SUFFIX } from "../text-input.js";
 import { outputJson } from "./helpers.js";
 import { resolveMachineHostId, resolveMachineTargetOption } from "./machine.js";
 
@@ -40,6 +42,11 @@ interface JsonOptions {
 
 interface AiServiceSetOptions extends JsonOptions {
   plugin?: string;
+}
+
+interface PromptSetOptions extends JsonOptions {
+  body?: string;
+  bodyFile?: string;
 }
 
 function requireAiTask(input: string): AiTask {
@@ -356,6 +363,23 @@ function isUiPreferenceConflict(error: unknown): boolean {
   return error instanceof BbHttpError && error.status === 409;
 }
 
+function printPromptTemplates(result: PromptTemplatesResponse): void {
+  for (const template of result.templates) {
+    const state = [
+      template.modified ? "modified" : null,
+      template.defaultChanged ? "default changed" : null,
+    ].filter((entry): entry is string => entry !== null);
+    console.log(
+      `${template.kind.padEnd(14)}${template.id}  ${template.title}${state.length > 0 ? `  [${state.join(", ")}]` : ""}`,
+    );
+  }
+  for (const orphaned of result.orphaned) {
+    console.log(
+      `orphaned      ${orphaned.templateId}  [saved override; reset to remove]`,
+    );
+  }
+}
+
 export function registerSettingsCommands(
   program: Command,
   getUrl: () => string,
@@ -623,6 +647,90 @@ export function registerSettingsCommands(
         ).system.uiPreferences.reset({ key });
         if (outputJson(opts, result)) return;
         console.log(`${key} reset`);
+      }),
+    );
+
+  const prompts = settings
+    .command("prompts")
+    .description("List, edit, and reset the prompt templates bb ships");
+
+  prompts
+    .command("list")
+    .description("List every prompt template with its modified and drift state")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(async (opts: JsonOptions) => {
+        const result =
+          await createCliBbSdk(getUrl()).system.experimental_prompts.list();
+        if (outputJson(opts, result)) return;
+        printPromptTemplates(result);
+      }),
+    );
+
+  prompts
+    .command("get <id>")
+    .description("Show one prompt template, including the shipped default")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(async (id: string, opts: JsonOptions) => {
+        const result = await createCliBbSdk(
+          getUrl(),
+        ).system.experimental_prompts.get({ id });
+        if (outputJson(opts, result)) return;
+        if (result.template === null) {
+          throw new Error(`Prompt template '${id}' is unavailable.`);
+        }
+        console.log(result.template.body);
+      }),
+    );
+
+  prompts
+    .command("set <id>")
+    .description(
+      "Save an edited prompt template body from --body or --body-file",
+    )
+    .option("--body <text>", "Template body inline")
+    .option(
+      "--body-file <path>",
+      `Read the body from a file; ${TEXT_FILE_HELP_SUFFIX}`,
+    )
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(async (id: string, opts: PromptSetOptions) => {
+        const body = await requireTextInput({
+          file: opts.bodyFile,
+          fileLabel: "--body-file",
+          inline: opts.body,
+          inlineLabel: "--body",
+        });
+        const result = await createCliBbSdk(
+          getUrl(),
+        ).system.experimental_prompts.set({ body, id });
+        if (outputJson(opts, result)) return;
+        console.log(`${id} saved`);
+        for (const warning of result.warnings) {
+          console.warn(`Warning: ${warning}`);
+        }
+      }),
+    );
+
+  prompts
+    .command("reset <id>")
+    .description(
+      "Reset a prompt template to its shipped default, or clear an orphaned override",
+    )
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(async (id: string, opts: JsonOptions) => {
+        const result = await createCliBbSdk(
+          getUrl(),
+        ).system.experimental_prompts.reset({ id });
+        if (outputJson(opts, result)) return;
+        console.log(
+          result.template === null
+            ? `${id} cleared (orphaned override)`
+            : `${id} reset`,
+        );
       }),
     );
 

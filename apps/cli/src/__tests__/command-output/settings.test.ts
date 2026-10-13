@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultAppSettings, defaultExperiments } from "@bb/domain";
 import {
@@ -600,6 +603,178 @@ describe("bb settings commands", () => {
           "Unknown task 'voice'. Testable tasks: thread-title, commit-message",
         ),
       );
+    });
+  });
+
+  describe("prompts", () => {
+    const LIST = {
+      templates: [
+        {
+          defaultChanged: true,
+          editingNotes: "Keep it short.",
+          id: "generateThreadMetadata",
+          intent: "Title threads.",
+          kind: "prompt",
+          modified: true,
+          overrideBody: "Custom {{cleanedPrompt}}",
+          summary: "Thread titles.",
+          title: "Thread Metadata Generator",
+          updatedAt: 123,
+          variables: [],
+        },
+        {
+          defaultChanged: false,
+          editingNotes: "Keep flags accurate.",
+          id: "bbGuideThreads",
+          intent: "Document threads.",
+          kind: "instruction",
+          modified: false,
+          overrideBody: null,
+          summary: "Thread commands.",
+          title: "bb Guide — Threads",
+          updatedAt: null,
+          variables: [],
+        },
+      ],
+      orphaned: [
+        {
+          basedOnDefaultHash: "hash",
+          body: "Orphaned body",
+          templateId: "removedTemplate",
+          updatedAt: 456,
+        },
+      ],
+    };
+
+    it("lists templates with modified and drift state, plus orphans", async () => {
+      stubServerApi({
+        "v1.settings.prompts.$get": vi.fn(async () => LIST),
+      });
+
+      await runCommand(["settings", "prompts", "list"], register);
+
+      expect(collectLogLines(vi.mocked(console.log))).toEqual([
+        "prompt        generateThreadMetadata  Thread Metadata Generator  [modified, default changed]",
+        "instruction   bbGuideThreads  bb Guide — Threads",
+        "orphaned      removedTemplate  [saved override; reset to remove]",
+      ]);
+    });
+
+    it("prints the list as JSON", async () => {
+      stubServerApi({
+        "v1.settings.prompts.$get": vi.fn(async () => LIST),
+      });
+
+      await runCommand(["settings", "prompts", "list", "--json"], register);
+
+      expect(collectLogPayloads(vi.mocked(console.log))).toEqual([
+        JSON.stringify(LIST, null, 2),
+      ]);
+    });
+
+    it("gets a template body", async () => {
+      const get = vi.fn(async () => ({
+        template: {
+          ...LIST.templates[0],
+          body: "Custom {{cleanedPrompt}}",
+          defaultBody: "Default {{cleanedPrompt}}",
+        },
+      }));
+      stubServerApi({ "v1.settings.prompts.:id.$get": get });
+
+      await runCommand(
+        ["settings", "prompts", "get", "generateThreadMetadata"],
+        register,
+      );
+
+      expect(get).toHaveBeenCalledWith({
+        param: { id: "generateThreadMetadata" },
+      });
+      expect(collectLogLines(vi.mocked(console.log))).toEqual([
+        "Custom {{cleanedPrompt}}",
+      ]);
+    });
+
+    it("sets a template body inline and reports warnings", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const put = vi.fn(async ({ json }) => ({
+        template: { ...LIST.templates[0], body: json.body },
+        warnings: ["invokedCommands is no longer referenced"],
+      }));
+      stubServerApi({ "v1.settings.prompts.:id.$put": put });
+
+      await runCommand(
+        [
+          "settings",
+          "prompts",
+          "set",
+          "generateThreadMetadata",
+          "--body",
+          "Name this: {{cleanedPrompt}}",
+        ],
+        register,
+      );
+
+      expect(put).toHaveBeenCalledWith({
+        json: { body: "Name this: {{cleanedPrompt}}" },
+        param: { id: "generateThreadMetadata" },
+      });
+      expect(collectLogLines(vi.mocked(console.log))).toEqual([
+        "generateThreadMetadata saved",
+      ]);
+      expect(warn).toHaveBeenCalledWith(
+        "Warning: invokedCommands is no longer referenced",
+      );
+      warn.mockRestore();
+    });
+
+    it("sets a template body from a file", async () => {
+      const put = vi.fn(async ({ json }) => ({
+        template: { ...LIST.templates[0], body: json.body },
+        warnings: [],
+      }));
+      stubServerApi({ "v1.settings.prompts.:id.$put": put });
+      const directory = await mkdtemp(join(tmpdir(), "bb-prompts-"));
+      const bodyPath = join(directory, "body.md");
+      await writeFile(bodyPath, "File body: {{cleanedPrompt}}\n", "utf8");
+
+      try {
+        await runCommand(
+          [
+            "settings",
+            "prompts",
+            "set",
+            "generateThreadMetadata",
+            "--body-file",
+            bodyPath,
+          ],
+          register,
+        );
+      } finally {
+        await rm(directory, { force: true, recursive: true });
+      }
+
+      expect(put).toHaveBeenCalledWith({
+        json: { body: "File body: {{cleanedPrompt}}" },
+        param: { id: "generateThreadMetadata" },
+      });
+    });
+
+    it("resets a template and clears orphaned overrides", async () => {
+      const del = vi.fn(async () => ({ template: null }));
+      stubServerApi({ "v1.settings.prompts.:id.$delete": del });
+
+      await runCommand(
+        ["settings", "prompts", "reset", "removedTemplate"],
+        register,
+      );
+
+      expect(del).toHaveBeenCalledWith({
+        param: { id: "removedTemplate" },
+      });
+      expect(collectLogLines(vi.mocked(console.log))).toEqual([
+        "removedTemplate cleared (orphaned override)",
+      ]);
     });
   });
 });

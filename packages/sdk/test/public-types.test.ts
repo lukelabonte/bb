@@ -389,6 +389,7 @@ type ExpectedSystemKey =
   | "testAiService"
   | "transcribeVoice"
   | "uiPreferences"
+  | "experimental_prompts"
   | "updateExperiments"
   | "updateGeneralSettings"
   | "updateKeyboardSettings"
@@ -397,6 +398,8 @@ type ExpectedSystemKey =
   | "version";
 
 type ExpectedSystemUiPreferencesKey = "list" | "reset" | "set";
+
+type ExpectedSystemExperimentalPromptsKey = "get" | "list" | "reset" | "set";
 
 type ExpectedThemeKey = "catalog" | "get" | "resolve" | "set";
 
@@ -610,6 +613,9 @@ describe("SDK public type entrypoints", () => {
     expectTypeOf<
       keyof RootBbSdk["system"]["uiPreferences"]
     >().toEqualTypeOf<ExpectedSystemUiPreferencesKey>();
+    expectTypeOf<
+      keyof RootBbSdk["system"]["experimental_prompts"]
+    >().toEqualTypeOf<ExpectedSystemExperimentalPromptsKey>();
     expectTypeOf<
       keyof RootBbSdk["terminals"]
     >().toEqualTypeOf<ExpectedTerminalsKey>();

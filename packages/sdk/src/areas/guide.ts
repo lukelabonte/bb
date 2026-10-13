@@ -73,7 +73,14 @@ const templateBodyById = new Map(
   templateDefinitions.map((template) => [template.id, template.body]),
 );
 
-function renderStaticTemplate(templateId: TemplateId): string {
+function renderStaticTemplate(
+  templateId: TemplateId,
+  overrides: ReadonlyMap<string, string> | undefined,
+): string {
+  const override = overrides?.get(templateId);
+  if (override !== undefined) {
+    return override;
+  }
   const body = templateBodyById.get(templateId);
   if (body === undefined) {
     throw new Error(`Template '${templateId}' is unavailable.`);
@@ -81,11 +88,17 @@ function renderStaticTemplate(templateId: TemplateId): string {
   return body;
 }
 
-export function createGuideArea(): GuideArea {
+export interface GuideAreaOptions {
+  overrides?: ReadonlyMap<string, string>;
+}
+
+export function createGuideArea(options: GuideAreaOptions = {}): GuideArea {
   return {
     render(input = {}) {
       if (!input.chapter) {
-        return { content: renderStaticTemplate("bbGuideOverview") };
+        return {
+          content: renderStaticTemplate("bbGuideOverview", options.overrides),
+        };
       }
       const chapter = resolveGuideChapter(input.chapter);
       const templateId = guideChapters[chapter];
@@ -97,7 +110,7 @@ export function createGuideArea(): GuideArea {
       }
       return {
         chapter,
-        content: renderStaticTemplate(templateId),
+        content: renderStaticTemplate(templateId, options.overrides),
       };
     },
   };

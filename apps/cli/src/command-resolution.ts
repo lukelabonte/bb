@@ -90,7 +90,7 @@ const OPTION_SYNONYMS: Readonly<Record<string, readonly string[]>> = {
   "--from-start": ["--since-seq"],
   "--timeout-ms": ["--timeout"],
   "--status": ["--exit"],
-  "--file": ["--prompt-file", "--message-file"],
+  "--file": ["--prompt-file", "--message-file", "--body-file"],
 };
 
 function editDistance(left: string, right: string): number {

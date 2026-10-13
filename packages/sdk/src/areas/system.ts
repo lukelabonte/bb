@@ -15,6 +15,9 @@ import type {
 } from "@bb/domain";
 import type { ProviderUsageResponse } from "@bb/host-daemon-contract";
 import type {
+  PromptTemplateResponse,
+  PromptTemplatesResponse,
+  SavePromptTemplateResponse,
   SetAiServiceSelectionRequest,
   SystemAiServicesResponse,
   SystemAppUpdateAcknowledgeRequest,
@@ -150,6 +153,34 @@ export interface SystemUiPreferencesArea {
   ): Promise<SystemUiPreferenceResult<Key>>;
 }
 
+export interface SystemPromptTemplatesArgs {
+  signal?: AbortSignal;
+}
+export type SystemPromptTemplatesResult = PromptTemplatesResponse;
+export interface SystemPromptTemplateArgs {
+  id: string;
+  signal?: AbortSignal;
+}
+export type SystemPromptTemplateResult = PromptTemplateResponse;
+export interface SystemSavePromptTemplateArgs {
+  body: string;
+  id: string;
+}
+export type SystemSavePromptTemplateResult = SavePromptTemplateResponse;
+export interface SystemResetPromptTemplateArgs {
+  id: string;
+}
+export interface SystemExperimentalPromptsArea {
+  list(args?: SystemPromptTemplatesArgs): Promise<SystemPromptTemplatesResult>;
+  get(args: SystemPromptTemplateArgs): Promise<SystemPromptTemplateResult>;
+  set(
+    args: SystemSavePromptTemplateArgs,
+  ): Promise<SystemSavePromptTemplateResult>;
+  reset(
+    args: SystemResetPromptTemplateArgs,
+  ): Promise<SystemPromptTemplateResult>;
+}
+
 export interface SystemArea {
   setMachineEnvironmentVariable(
     input: MachineEnvironmentSet,
@@ -187,6 +218,7 @@ export interface SystemArea {
     args: SystemVoiceTranscriptionArgs,
   ): Promise<SystemVoiceTranscriptionResult>;
   uiPreferences: SystemUiPreferencesArea;
+  experimental_prompts: SystemExperimentalPromptsArea;
   mobileAppDownloads(): typeof mobileAppDownloads;
   mobileAppReleases(): Promise<SystemMobileAppReleasesResponse>;
   updateExperiments(
@@ -258,8 +290,45 @@ export function createSystemArea(args: CreateSdkAreaArgs): SystemArea {
       return body as UiPreferenceResponse<typeof input.key>;
     },
   };
+  const experimental_prompts: SystemExperimentalPromptsArea = {
+    async list(input) {
+      return transport.readJson(
+        transport.api.v1.settings.prompts.$get(
+          {},
+          ...signalRequestArgs(input?.signal),
+        ),
+      );
+    },
+    async get(input) {
+      const body = await transport.readJson(
+        transport.api.v1.settings.prompts[":id"].$get(
+          { param: { id: input.id } },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+      return body as PromptTemplateResponse;
+    },
+    async set(input) {
+      const body = await transport.readJson(
+        transport.api.v1.settings.prompts[":id"].$put({
+          json: { body: input.body },
+          param: { id: input.id },
+        }),
+      );
+      return body as SavePromptTemplateResponse;
+    },
+    async reset(input) {
+      const body = await transport.readJson(
+        transport.api.v1.settings.prompts[":id"].$delete({
+          param: { id: input.id },
+        }),
+      );
+      return body as PromptTemplateResponse;
+    },
+  };
   return {
     uiPreferences,
+    experimental_prompts,
     async setMachineEnvironmentVariable(input) {
       return transport.readJson(
         transport.api.v1.settings["machine-environment"].$post({ json: input }),
