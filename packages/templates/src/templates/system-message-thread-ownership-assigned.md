@@ -1,5 +1,5 @@
 ---
-kind: prompt
+kind: system-message
 title: Thread ownership assigned
 summary: Notifies a parent thread that a child thread is now assigned to it.
 intent: Let the new parent know a thread is now assigned to it.

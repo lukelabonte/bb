@@ -13,6 +13,11 @@
       "types": "./src/generated/templates.generated.ts",
       "default": "./src/generated/templates.generated.ts"
     },
+    "./validation": {
+      "source": "./src/template-validation.ts",
+      "types": "./src/template-validation.ts",
+      "default": "./src/template-validation.ts"
+    },
     "./plugin-scaffold": {
       "source": "./src/plugin-scaffold.ts",
       "types": "./src/plugin-scaffold.ts",
@@ -22,7 +27,7 @@
   "types": "./src/index.ts",
   "scripts": {
     "clean": "rimraf dist tsconfig.tsbuildinfo",
-    "generate:templates": "node ./scripts/generate-templates.mjs",
+    "generate:templates": "node ./scripts/generate-templates.ts",
     "generate:plugin-scaffold": "node ./scripts/generate-plugin-scaffold.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts"

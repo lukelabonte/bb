@@ -470,8 +470,9 @@
     "@bb/templates#generate:templates": {
       "dependsOn": [],
       "inputs": [
-        "scripts/generate-templates.mjs",
+        "scripts/generate-templates.ts",
         "scripts/write-generated.mjs",
+        "src/template-validation.ts",
         "src/templates/**"
       ],
       "outputs": ["src/generated/templates.generated.ts"]

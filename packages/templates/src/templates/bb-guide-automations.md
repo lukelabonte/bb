@@ -3,6 +3,7 @@ kind: instruction
 title: bb Guide Automations
 summary: Command reference for scheduled agent and script work.
 intent: Help agents create, edit, inspect, and run automations through the CLI.
+editingNotes: Keep flags accurate against the plugin command implementation (plugins/automations/src/cli.ts).
 ---
 
 Automations schedule recurring or one-shot work. Agent automations run a prompt

@@ -1,3 +1,10 @@
+---
+kind: instruction
+title: bb Guide — Browser
+summary: Command reference for the experimental core browser automation API and cookie import.
+intent: Explain how agents control BB desktop tabs and import browser cookies safely.
+editingNotes: Keep core bb browser flags and cookie-import safety constraints accurate against the CLI implementation (apps/cli/src/commands/browser.ts). Browser Automation plugin session/script details live in its skill.
+---
 # Built-in browser automation
 
 `bb browser` is the experimental core API for automation integrations controlling BB desktop tabs. The Browser Automation plugin adds its own script/session commands; another plugin can use the same core connection independently.

@@ -1,5 +1,5 @@
 ---
-kind: prompt
+kind: system-message
 title: Thread ownership removed
 summary: Notifies a parent thread that a child thread is no longer assigned to it.
 intent: Let the previous parent know a thread is no longer assigned to it.

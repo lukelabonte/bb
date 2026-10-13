@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   renderTemplate,
+  renderTemplateBody,
+  templateBody,
   type TemplateId,
   type TemplateVariables,
 } from "../src/index.js";
 import { templateDefinitions } from "../src/generated/templates.generated.js";
+import {
+  validateTemplateBody,
+  validateTemplateMetadata,
+  TEMPLATE_KINDS,
+} from "../src/template-validation.js";
 
 describe("@bb/templates", () => {
   it("documents project creation machine routing", () => {
@@ -98,14 +105,59 @@ describe("@bb/templates", () => {
     );
   });
 
+  it("ships complete metadata and passing validation for every template", () => {
+    expect(templateDefinitions.length).toBeGreaterThan(0);
+    for (const template of templateDefinitions) {
+      expect(
+        validateTemplateMetadata(template.id, {
+          editingNotes: template.editingNotes,
+          intent: template.intent,
+          kind: template.kind,
+          summary: template.summary,
+          title: template.title,
+        }),
+      ).toEqual([]);
+      expect(TEMPLATE_KINDS).toContain(template.kind);
+      expect(template.body.length).toBeGreaterThan(0);
+      expect(
+        validateTemplateBody({
+          body: template.body,
+          declaredVariables: template.variables,
+          templateId: template.id,
+        }).errors,
+      ).toEqual([]);
+      for (const variable of template.variables) {
+        expect(variable.description.length).toBeGreaterThan(0);
+        expect(typeof variable.optional).toBe("boolean");
+      }
+    }
+  });
+
+  it("renders the shipped default body through the explicit body path", () => {
+    const rendered = renderTemplate("agentThreadMessage", {
+      senderThreadId: "thr_sender",
+      messageText: "Please check the failing test.",
+    });
+    expect(
+      renderTemplateBody(
+        "agentThreadMessage",
+        templateBody("agentThreadMessage"),
+        {
+          senderThreadId: "thr_sender",
+          messageText: "Please check the failing test.",
+        },
+      ),
+    ).toBe(rendered);
+  });
+
   it("renders all templates without error", () => {
     const templates = templateDefinitions;
 
     const placeholderVariables: Record<string, Record<string, string>> = {};
     for (const template of templates) {
       const vars: Record<string, string> = {};
-      for (const varName of Object.keys(template.variables)) {
-        vars[varName] = `__placeholder_${varName}__`;
+      for (const variable of template.variables) {
+        vars[variable.name] = `__placeholder_${variable.name}__`;
       }
       placeholderVariables[template.id] = vars;
     }
