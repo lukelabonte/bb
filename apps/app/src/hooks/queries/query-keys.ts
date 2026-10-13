@@ -62,6 +62,8 @@ const SYSTEM_MACHINE_PROVIDERS_QUERY_KEY = "systemMachineProviders";
 const MACHINE_ENVIRONMENT_QUERY_KEY = "machine-environment";
 const SYSTEM_CONFIG_QUERY_KEY = "systemConfig";
 const SYSTEM_AI_SERVICES_QUERY_KEY = "systemAiServices";
+const PROMPT_TEMPLATES_QUERY_KEY = "promptTemplates";
+const PROMPT_TEMPLATE_QUERY_KEY = "promptTemplate";
 const UI_PREFERENCES_QUERY_KEY = "uiPreferences";
 const SYSTEM_THEME_QUERY_KEY = "systemTheme";
 export const SYSTEM_EXECUTION_OPTIONS_QUERY_KEY = "systemExecutionOptions";
@@ -480,6 +482,14 @@ type AllMachineEnvironmentQueryKeyPrefix = readonly [
 ];
 type SystemConfigQueryKey = readonly [typeof SYSTEM_CONFIG_QUERY_KEY];
 type SystemAiServicesQueryKey = readonly [typeof SYSTEM_AI_SERVICES_QUERY_KEY];
+type PromptTemplatesQueryKey = readonly [typeof PROMPT_TEMPLATES_QUERY_KEY];
+type PromptTemplateQueryKey = readonly [
+  typeof PROMPT_TEMPLATE_QUERY_KEY,
+  string,
+];
+type AllPromptTemplatesQueryKeyPrefix = readonly [
+  typeof PROMPT_TEMPLATE_QUERY_KEY,
+];
 type UiPreferencesQueryKey = readonly [typeof UI_PREFERENCES_QUERY_KEY];
 type SystemThemeQueryKey = readonly [typeof SYSTEM_THEME_QUERY_KEY, string];
 type AllSystemThemesQueryKeyPrefix = readonly [typeof SYSTEM_THEME_QUERY_KEY];
@@ -1169,6 +1179,20 @@ export function systemConfigQueryKey(): SystemConfigQueryKey {
 
 export function systemAiServicesQueryKey(): SystemAiServicesQueryKey {
   return [SYSTEM_AI_SERVICES_QUERY_KEY];
+}
+
+export function promptTemplatesQueryKey(): PromptTemplatesQueryKey {
+  return [PROMPT_TEMPLATES_QUERY_KEY];
+}
+
+export function promptTemplateQueryKey(
+  templateId: string,
+): PromptTemplateQueryKey {
+  return [PROMPT_TEMPLATE_QUERY_KEY, templateId];
+}
+
+export function allPromptTemplatesQueryKeyPrefix(): AllPromptTemplatesQueryKeyPrefix {
+  return [PROMPT_TEMPLATE_QUERY_KEY];
 }
 
 export function uiPreferencesQueryKey(): UiPreferencesQueryKey {

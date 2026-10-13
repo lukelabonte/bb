@@ -63,6 +63,8 @@ import {
   sidebarNavigationQueryKey,
   systemAiServicesQueryKey,
   systemConfigQueryKey,
+  allPromptTemplatesQueryKeyPrefix,
+  promptTemplatesQueryKey,
   uiPreferencesQueryKey,
   allSystemProvidersQueryKeyPrefix,
   threadDefaultExecutionOptionsQueryKey,
@@ -562,6 +564,9 @@ export const REALTIME_SYSTEM_CHANGE_REGISTRY = {
   },
   "environment-availability-changed": {
     dirty: [dirtyEnvironmentProviderQueries],
+  },
+  "prompt-templates-changed": {
+    dirty: [dirtyPromptTemplatesQueries],
   },
   "ui-preferences-changed": {
     dirty: [dirtyUiPreferencesQueries],
@@ -1197,6 +1202,15 @@ function dirtyMachineEnvironmentQueries({
   invalidateQueryKeysWithoutCancelingActiveFetches({
     queryClient,
     queryKeys: [allMachineEnvironmentQueryKeyPrefix()],
+  });
+}
+
+function dirtyPromptTemplatesQueries({
+  queryClient,
+}: RealtimeDirtyContext): void {
+  invalidateQueryKeysWithoutCancelingActiveFetches({
+    queryClient,
+    queryKeys: [promptTemplatesQueryKey(), allPromptTemplatesQueryKeyPrefix()],
   });
 }
 
