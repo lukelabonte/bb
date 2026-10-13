@@ -1,4 +1,4 @@
-import { renderTemplate } from "@bb/templates";
+import { renderTemplateBody, templateBody } from "@bb/templates";
 import { getThread, updateThread } from "@bb/db";
 import {
   removeCommandMentionsFromPromptInput,
@@ -14,6 +14,7 @@ import {
 } from "@bb/text-utils";
 import type { AppDeps, LoggedWorkSessionDeps } from "../../types.js";
 import { runTextAiTask } from "../ai/ai-tasks.js";
+import { resolvePromptTemplateBody } from "../system/prompt-templates.js";
 
 const MIN_TITLE_GENERATION_WORDS = 5;
 const MAX_GENERATED_TITLE_WIDTH = 48;
@@ -171,22 +172,29 @@ export function sanitizeGeneratedBranchSlug(value: string): string | null {
   return slug.length > 0 ? slug : null;
 }
 
-export function buildThreadTitlePrompt(input: PromptInput[]): string | null {
+export function buildThreadTitlePrompt(
+  input: PromptInput[],
+  bodyOverride?: string,
+): string | null {
   const text = cleanPromptText(input);
   if (!text) {
     return null;
   }
   const commands = collectInvokedPromptCommands(input);
   const body = promptTextWithoutCommands(input, commands);
-  return renderTemplate("generateThreadMetadata", {
-    cleanedPrompt: clampToWidth(
-      body.length > 0 ? body : text,
-      MAX_TITLE_PROMPT_WIDTH,
-    ),
-    ...(commands.length > 0
-      ? { invokedCommands: formatInvokedCommands(commands) }
-      : {}),
-  });
+  return renderTemplateBody(
+    "generateThreadMetadata",
+    bodyOverride ?? templateBody("generateThreadMetadata"),
+    {
+      cleanedPrompt: clampToWidth(
+        body.length > 0 ? body : text,
+        MAX_TITLE_PROMPT_WIDTH,
+      ),
+      ...(commands.length > 0
+        ? { invokedCommands: formatInvokedCommands(commands) }
+        : {}),
+    },
+  );
 }
 
 export async function generateThreadMetadataWithOutcome(
@@ -203,7 +211,10 @@ export async function generateThreadMetadataWithOutcome(
     ...(reason ? { reason } : {}),
   });
 
-  const prompt = buildThreadTitlePrompt(args.input);
+  const prompt = buildThreadTitlePrompt(
+    args.input,
+    resolvePromptTemplateBody(deps, "generateThreadMetadata"),
+  );
   if (prompt === null) {
     return complete(null, "empty-input");
   }

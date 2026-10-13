@@ -42,6 +42,7 @@ import type {
 } from "../../types.js";
 import { ApiError } from "../../errors.js";
 import { ensureHostSessionReadyForWork } from "../hosts/host-lifecycle.js";
+import { resolvePromptTemplateBody } from "../system/prompt-templates.js";
 import {
   LIVE_DAEMON_COMMAND_TIMEOUT_MS,
   startLiveHostCommand,
@@ -304,6 +305,7 @@ function isQueuedMessageAutoSendCandidate(
 }
 
 interface FormatQueuedMessageInputForSenderArgs {
+  body?: string;
   input: PromptInput[];
   senderThreadId: string | null;
 }
@@ -345,6 +347,7 @@ function formatQueuedMessageInputForSender(
     return args.input;
   }
   return formatAgentThreadInput({
+    body: args.body,
     input: args.input,
     senderThreadId: args.senderThreadId,
   });
@@ -480,8 +483,14 @@ async function sendClaimedQueuedMessageForIdleProviderThread(
   const queuedMessage = queuedMessages[0]!;
 
   const senderThreadId = args.queuedMessages[0]!.senderThreadId;
+  const agentThreadMessageBody = args.queuedMessages.some(
+    (claimedQueuedMessage) => claimedQueuedMessage.senderThreadId !== null,
+  )
+    ? resolvePromptTemplateBody(deps, "agentThreadMessage")
+    : undefined;
   let inputGroups = args.queuedMessages.map((claimedQueuedMessage) =>
     formatQueuedMessageInputForSender({
+      body: agentThreadMessageBody,
       input: toThreadQueuedMessage(claimedQueuedMessage).content,
       senderThreadId: claimedQueuedMessage.senderThreadId,
     }),

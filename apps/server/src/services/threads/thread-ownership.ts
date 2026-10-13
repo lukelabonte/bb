@@ -7,8 +7,9 @@ import {
   updateThread,
 } from "@bb/db";
 import type { PromptInput, SystemMessageSubject, Thread } from "@bb/domain";
-import { renderTemplate } from "@bb/templates";
+import { renderTemplateBody, templateBody } from "@bb/templates";
 import type { LoggedPendingInteractionWorkSessionDeps } from "../../types.js";
+import { resolvePromptTemplateBody } from "../system/prompt-templates.js";
 import { NotificationBuffer } from "../lib/notification-buffer.js";
 import { emitPluginThreadParentChanged } from "../plugins/plugin-thread-events.js";
 import {
@@ -103,14 +104,19 @@ async function queueParentSystemMessageBestEffort(
   }
 }
 
-function buildThreadOwnershipSystemInput(
+export function buildThreadOwnershipSystemInput(
   templateId: ThreadOwnershipTemplateId,
   thread: ThreadLabelSource,
+  body?: string,
 ): PromptInput[] {
   const mention = buildParentSystemThreadMention({ thread });
-  const renderedText = renderTemplate(templateId, {
-    threadMention: THREAD_OWNERSHIP_MENTION_SLOT,
-  });
+  const renderedText = renderTemplateBody(
+    templateId,
+    body ?? templateBody(templateId),
+    {
+      threadMention: THREAD_OWNERSHIP_MENTION_SLOT,
+    },
+  );
   return buildParentSystemInputFromTemplateSlot({
     renderedText,
     slot: THREAD_OWNERSHIP_MENTION_SLOT,
@@ -191,6 +197,7 @@ async function sendThreadOwnershipNotices(
       input: buildThreadOwnershipSystemInput(
         "systemMessageThreadOwnershipAssigned",
         thread,
+        resolvePromptTemplateBody(deps, "systemMessageThreadOwnershipAssigned"),
       ),
       reason: "assigned",
       templateId: "systemMessageThreadOwnershipAssigned",
@@ -204,6 +211,7 @@ async function sendThreadOwnershipNotices(
       input: buildThreadOwnershipSystemInput(
         "systemMessageThreadOwnershipRemoved",
         thread,
+        resolvePromptTemplateBody(deps, "systemMessageThreadOwnershipRemoved"),
       ),
       reason: "removed",
       templateId: "systemMessageThreadOwnershipRemoved",

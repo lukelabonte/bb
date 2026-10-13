@@ -1,6 +1,7 @@
-import { renderTemplate } from "@bb/templates";
+import { renderTemplateBody, templateBody } from "@bb/templates";
 import { truncateToWidthAtWordBoundary } from "@bb/text-utils";
 import type { LoggedWorkSessionDeps } from "../../types.js";
+import { resolvePromptTemplateBody } from "../system/prompt-templates.js";
 import { runTextAiTask } from "./ai-tasks.js";
 
 const MAX_COMMIT_SUBJECT_WIDTH = 72;
@@ -14,13 +15,18 @@ export interface GenerateCommitMessageArgs {
 
 export function buildCommitMessagePrompt(
   args: GenerateCommitMessageArgs,
+  body?: string,
 ): string {
-  return renderTemplate("generateCommitMessage", {
-    diffDescription: args.diffDescription,
-    shortstat: args.shortstat,
-    files: args.files,
-    patch: args.patch,
-  });
+  return renderTemplateBody(
+    "generateCommitMessage",
+    body ?? templateBody("generateCommitMessage"),
+    {
+      diffDescription: args.diffDescription,
+      shortstat: args.shortstat,
+      files: args.files,
+      patch: args.patch,
+    },
+  );
 }
 
 export function sanitizeGeneratedCommitMessage(value: string): string | null {
@@ -38,7 +44,10 @@ export async function generateCommitMessage(
   const outcome = await runTextAiTask(deps, {
     task: "commit-message",
     label: "Commit message generation",
-    prompt: buildCommitMessagePrompt(args),
+    prompt: buildCommitMessagePrompt(
+      args,
+      resolvePromptTemplateBody(deps, "generateCommitMessage"),
+    ),
   });
   return outcome.ok ? sanitizeGeneratedCommitMessage(outcome.value) : null;
 }

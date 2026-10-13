@@ -3,7 +3,10 @@ import {
   getThread,
   listEvents,
   setAiServiceSelection,
+  upsertStoredPromptTemplateOverride,
 } from "@bb/db";
+import { templateBody } from "@bb/templates";
+import { hashPromptTemplateBody } from "../../src/services/system/prompt-templates.js";
 import {
   type ResolvedThreadExecutionOptions,
   systemThreadProvisioningEventDataSchema,
@@ -780,6 +783,28 @@ describe("generated thread titles", () => {
       });
       expect(outcome.metadata?.title).toBe(
         "Make the generated branch names easier to read",
+      );
+    });
+  });
+
+  it("sends a saved prompt template override", async () => {
+    mockThreadMetadata({ title: "Drop stale release branches" });
+    await withTestHarness(async (harness) => {
+      upsertStoredPromptTemplateOverride(harness.db, {
+        basedOnDefaultHash: hashPromptTemplateBody(
+          templateBody("generateThreadMetadata"),
+        ),
+        body: "OVERRIDE TITLE PROMPT: {{cleanedPrompt}}",
+        templateId: "generateThreadMetadata",
+        updatedAt: Date.now(),
+      });
+
+      await generateThreadMetadataWithOutcome(harness.deps, {
+        input: textInput("Make generated branch names easier to read"),
+        threadId: "thr_override_title",
+      });
+      expect(sentPrompt()).toBe(
+        "OVERRIDE TITLE PROMPT: Make generated branch names easier to read",
       );
     });
   });

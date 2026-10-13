@@ -7,6 +7,7 @@ import type {
 } from "@bb/server-contract";
 import type { LoggedWorkSessionDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
+import { resolvePromptTemplateBody } from "../system/prompt-templates.js";
 import { buildThreadTitlePrompt } from "../threads/title-generation.js";
 import {
   aiServiceKey,
@@ -95,17 +96,26 @@ export async function updateAiServiceSelection(
   return buildAiServicesView(deps);
 }
 
-function sampleFor(task: AiTextTask): {
+function sampleFor(
+  deps: AiServicesViewDeps,
+  task: AiTextTask,
+): {
   prompt: string;
   sanitize: (value: string) => string | null;
 } {
   if (task === "commit-message") {
     return {
-      prompt: buildCommitMessagePrompt(SAMPLE_COMMIT),
+      prompt: buildCommitMessagePrompt(
+        SAMPLE_COMMIT,
+        resolvePromptTemplateBody(deps, "generateCommitMessage"),
+      ),
       sanitize: sanitizeGeneratedCommitMessage,
     };
   }
-  const prompt = buildThreadTitlePrompt(SAMPLE_TITLE_INPUT);
+  const prompt = buildThreadTitlePrompt(
+    SAMPLE_TITLE_INPUT,
+    resolvePromptTemplateBody(deps, "generateThreadMetadata"),
+  );
   if (prompt === null) {
     throw new Error("The sample title prompt is empty");
   }
@@ -116,7 +126,7 @@ export async function testAiService(
   deps: AiServicesViewDeps,
   args: { task: AiTextTask; signal: AbortSignal },
 ): Promise<TestAiServiceResponse> {
-  const sample = sampleFor(args.task);
+  const sample = sampleFor(deps, args.task);
   const outcome = await runTextAiTask(deps, {
     task: args.task,
     label: "AI service test",

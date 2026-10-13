@@ -107,11 +107,6 @@ interface BuildParentSystemThreadMentionArgs {
   thread: ParentSystemThreadMentionSource;
 }
 
-interface RenderedParentSystemSlotParts {
-  prefix: string;
-  suffix: string;
-}
-
 interface QueueReadyParentSystemMessageArgs extends ParentSystemMessageTaxonomy {
   environment: ReadyThreadEnvironment;
   execution: ResolvedThreadExecutionOptions;
@@ -139,24 +134,6 @@ function parentSystemTurnRequestFields(
     requestMethod: "turn/start",
     source: PARENT_SYSTEM_MESSAGE_SOURCE,
   } as const;
-}
-
-function splitRenderedParentSystemSlot(
-  args: BuildParentSystemInputFromTemplateSlotArgs,
-): RenderedParentSystemSlotParts {
-  const start = args.renderedText.indexOf(args.slot);
-  if (start === -1) {
-    throw new Error("Parent system template slot was not found in message");
-  }
-  const next = args.renderedText.indexOf(args.slot, start + args.slot.length);
-  if (next !== -1) {
-    throw new Error("Parent system template slot must be unique in message");
-  }
-
-  return {
-    prefix: args.renderedText.slice(0, start),
-    suffix: args.renderedText.slice(start + args.slot.length),
-  };
 }
 
 function buildParentSystemInputFromSegments(
@@ -189,14 +166,21 @@ function buildParentSystemInputFromSegments(
 export function buildParentSystemInputFromTemplateSlot(
   args: BuildParentSystemInputFromTemplateSlotArgs,
 ): PromptInput[] {
-  const parts = splitRenderedParentSystemSlot(args);
-  return buildParentSystemInputFromSegments({
-    segments: [
-      { kind: "text", text: parts.prefix },
-      ...args.segments,
-      { kind: "text", text: parts.suffix },
-    ],
+  const pieces = args.renderedText.split(args.slot);
+  if (pieces.length === 1) {
+    return buildParentSystemInputFromSegments({
+      segments: [{ kind: "text", text: args.renderedText }],
+    });
+  }
+
+  const segments: ParentSystemInputSegment[] = [];
+  pieces.forEach((piece, index) => {
+    if (index > 0) {
+      segments.push(...args.segments);
+    }
+    segments.push({ kind: "text", text: piece });
   });
+  return buildParentSystemInputFromSegments({ segments });
 }
 
 export function parentSystemThreadLabel(thread: {

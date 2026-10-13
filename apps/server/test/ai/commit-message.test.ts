@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { upsertStoredPromptTemplateOverride } from "@bb/db";
+import { templateBody } from "@bb/templates";
 import { registerFakeAiService } from "../helpers/ai-services.js";
 import { generateCommitMessage } from "../../src/services/ai/commit-message.js";
+import { hashPromptTemplateBody } from "../../src/services/system/prompt-templates.js";
 import {
   reportQueuedCommandSuccess,
   waitForQueuedCommand,
@@ -149,6 +152,28 @@ describe("commit message generation", () => {
       );
       expect(message?.length).toBeLessThanOrEqual(72);
       expect(message).toMatch(/^feat: add an extremely long commit subject/u);
+    });
+  });
+
+  it("sends a saved prompt template override", async () => {
+    await withTestHarness({}, async (harness) => {
+      upsertStoredPromptTemplateOverride(harness.db, {
+        basedOnDefaultHash: hashPromptTemplateBody(
+          templateBody("generateCommitMessage"),
+        ),
+        body: "Write one commit line for:\n{{shortstat}}",
+        templateId: "generateCommitMessage",
+        updatedAt: Date.now(),
+      });
+      const codex = registerCodex(harness, async () => "fix: override");
+
+      await expect(
+        generateCommitMessage(harness.deps, commitMessageArgs),
+      ).resolves.toBe("fix: override");
+      const prompt = codex.completeCalls[0]?.prompt ?? "";
+      expect(prompt).toBe(
+        "Write one commit line for:\n1 file changed, 1 insertion(+)",
+      );
     });
   });
 

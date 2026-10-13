@@ -5,8 +5,9 @@ import type {
   ChildThreadOutcome,
 } from "@bb/domain";
 import { listActiveBackgroundTaskCountsByThreadIds } from "@bb/db";
-import { renderTemplate } from "@bb/templates";
+import { renderTemplateBody, templateBody } from "@bb/templates";
 import type { LoggedPendingInteractionWorkSessionDeps } from "../../types.js";
+import { resolvePromptTemplateBody } from "../system/prompt-templates.js";
 import {
   buildParentSystemInputFromTemplateSlot,
   buildParentSystemThreadMention,
@@ -53,11 +54,13 @@ interface FormatChildThreadTurnStatusLineArgs {
 }
 
 interface BuildChildThreadTurnStatusBatchInputArgs {
+  body?: string;
   items: ChildThreadTurnNotificationBatchItem[];
 }
 
 interface BuildChildThreadNeedsAttentionInputArgs {
   blockerSummary: string | null;
+  body?: string;
   childThread: ChildThreadNotificationSource;
 }
 
@@ -337,9 +340,13 @@ export function buildChildThreadTurnStatusBatchInput(
   args: BuildChildThreadTurnStatusBatchInputArgs,
 ): PromptInput[] {
   const lines = buildChildThreadTurnStatusBatchLines(args);
-  const renderedText = renderTemplate("systemMessageChildThreadOutcomeBatch", {
-    updates: CHILD_THREAD_OUTCOME_BATCH_UPDATES_SLOT,
-  });
+  const renderedText = renderTemplateBody(
+    "systemMessageChildThreadOutcomeBatch",
+    args.body ?? templateBody("systemMessageChildThreadOutcomeBatch"),
+    {
+      updates: CHILD_THREAD_OUTCOME_BATCH_UPDATES_SLOT,
+    },
+  );
   return buildParentSystemInputFromTemplateSlot({
     renderedText,
     slot: CHILD_THREAD_OUTCOME_BATCH_UPDATES_SLOT,
@@ -353,8 +360,9 @@ export function buildChildThreadNeedsAttentionInput(
   const mention = buildParentSystemThreadMention({
     thread: args.childThread,
   });
-  const renderedText = renderTemplate(
+  const renderedText = renderTemplateBody(
     "systemMessageChildThreadNeedsAttention",
+    args.body ?? templateBody("systemMessageChildThreadNeedsAttention"),
     {
       blockerSummary: formatChildThreadNeedsAttentionSummary(
         args.blockerSummary,
@@ -399,6 +407,10 @@ async function flushChildThreadTurnNotificationBatch(
   try {
     await queueParentSystemMessage(deps, {
       input: buildChildThreadTurnStatusBatchInput({
+        body: resolvePromptTemplateBody(
+          deps,
+          "systemMessageChildThreadOutcomeBatch",
+        ),
         items: batch.items,
       }),
       parentThreadId,
@@ -505,6 +517,10 @@ export async function queueChildThreadNeedsAttentionNotificationBestEffort(
     await queueParentSystemMessage(deps, {
       input: buildChildThreadNeedsAttentionInput({
         blockerSummary: args.blockerSummary,
+        body: resolvePromptTemplateBody(
+          deps,
+          "systemMessageChildThreadNeedsAttention",
+        ),
         childThread: args.childThread,
       }),
       parentThreadId: args.parentThreadId,

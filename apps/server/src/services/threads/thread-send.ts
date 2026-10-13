@@ -17,12 +17,13 @@ import {
   isStandaloneBuiltinClearCommand,
 } from "@bb/domain";
 import type { SendMessageRequest } from "@bb/server-contract";
-import { renderTemplate } from "@bb/templates";
+import { renderTemplateBody, templateBody } from "@bb/templates";
 import type {
   AppDeps,
   LoggedPendingInteractionWorkSessionDeps,
 } from "../../types.js";
 import { ApiError } from "../../errors.js";
+import { resolvePromptTemplateBody } from "../system/prompt-templates.js";
 import {
   addRequestIdToTurnSubmitCommandPayload,
   buildExecutionOptions,
@@ -112,11 +113,13 @@ interface ResolveMessageSenderArgs {
 }
 
 interface FormatAgentThreadInputArgs {
+  body?: string;
   input: PromptInput[];
   senderThreadId: string;
 }
 
 interface BuildAgentThreadMessageTextArgs {
+  body?: string;
   messageText: string;
   senderThreadId: string;
 }
@@ -303,10 +306,14 @@ export function resolveMessageSenderThreadId(
 function buildAgentThreadMessageText(
   args: BuildAgentThreadMessageTextArgs,
 ): string {
-  return renderTemplate("agentThreadMessage", {
-    messageText: args.messageText,
-    senderThreadId: args.senderThreadId,
-  });
+  return renderTemplateBody(
+    "agentThreadMessage",
+    args.body ?? templateBody("agentThreadMessage"),
+    {
+      messageText: args.messageText,
+      senderThreadId: args.senderThreadId,
+    },
+  );
 }
 
 export function formatAgentThreadInput(
@@ -317,6 +324,7 @@ export function formatAgentThreadInput(
     const textItem: TextPromptInput = {
       type: "text",
       text: buildAgentThreadMessageText({
+        body: args.body,
         messageText: "",
         senderThreadId: args.senderThreadId,
       }),
@@ -332,6 +340,7 @@ export function formatAgentThreadInput(
     return {
       ...item,
       text: buildAgentThreadMessageText({
+        body: args.body,
         messageText: item.text,
         senderThreadId: args.senderThreadId,
       }),
@@ -495,10 +504,15 @@ async function sendThreadMessageWithoutContextClear(
     senderThreadId: payload.senderThreadId,
     targetThread: thread,
   });
+  const agentThreadMessageBody =
+    senderThreadId === null
+      ? undefined
+      : resolvePromptTemplateBody(deps, "agentThreadMessage");
   let inputGroups = payload.inputGroups
     ? payload.inputGroups.map((inputGroup) =>
         senderThreadId
           ? formatAgentThreadInput({
+              body: agentThreadMessageBody,
               input: inputGroup,
               senderThreadId,
             })
@@ -510,6 +524,7 @@ async function sendThreadMessageWithoutContextClear(
       ? flattenPromptInputGroups(inputGroups)
       : senderThreadId
         ? formatAgentThreadInput({
+            body: agentThreadMessageBody,
             input: payload.input,
             senderThreadId,
           })
