@@ -125,6 +125,30 @@ hide the navigation rail's destinations (see Navigation rail below).
 - The complete default table is in `docs/configuration.md` in the bb source
   repository.
 
+## Prompt templates
+
+- Settings → Magic Prompts lists every prompt template bb ships, grouped by
+  kind: prompts, instructions, and system messages. Each entry shows its id,
+  declared variables, editing notes, whether an override is saved, and whether
+  the shipped default changed since the override was saved.
+- Overrides are server-wide, apply live without a restart, and survive
+  restarts. With no override saved, an action renders the shipped default.
+- `bb settings prompts list [--json]` prints every template with its modified
+  and default-changed state, plus orphaned overrides.
+- `bb settings prompts get <id> [--json]` prints the effective body and the
+  shipped default. `set <id> (--body <text> | --body-file <path>) [--json]`
+  saves a body; `--body-file -` reads stdin. Prefer `--body-file` for
+  multi-line bodies so the shell does not expand `backticks` or $(...).
+- Saving fails when the body references an undeclared variable. Declared
+  variables the body no longer references save with a warning; notification
+  templates can lose their thread mention that way.
+- `bb settings prompts reset <id> [--json]` restores the shipped default and
+  also clears an orphaned override whose template no longer exists. Orphaned
+  overrides are listed and ignored when rendering.
+- The SDK exposes the same surface as `sdk.system.experimental_prompts` with
+  `list`, `get`, `set`, and `reset`. `bb guide` renders saved overrides when
+  the server is reachable and falls back to shipped defaults otherwise.
+
 ## Diagnostic events
 
 - `showDiagnosticEvents` defaults to false in all builds. Set it with

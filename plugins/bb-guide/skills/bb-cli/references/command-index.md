@@ -29,6 +29,11 @@ This index lists every command path that the core CLI registers, including alias
 - `bb settings ui get`
 - `bb settings ui set`
 - `bb settings ui reset`
+- `bb settings prompts`
+- `bb settings prompts list`
+- `bb settings prompts get`
+- `bb settings prompts set`
+- `bb settings prompts reset`
 - `bb settings usage`
 - `bb settings version`
 - `bb settings reload`

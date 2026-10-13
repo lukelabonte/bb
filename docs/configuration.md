@@ -721,6 +721,37 @@ bundled `bb` CLI or a standalone host daemon. The CLI can omit it when targeting
 the default local packaged server at `http://127.0.0.1:38886`; set it for remote
 or non-default servers.
 
+## Prompt Templates
+
+Settings → Magic Prompts lists every prompt template bb ships, grouped by kind
+(`prompt`, `instruction`, `system-message`). Templates come from the build-time
+registry in `packages/templates`; each entry carries its title, id, declared
+variables, and editing notes.
+
+Saving an edit stores a server-wide override in the database. The next trigger
+of the associated action uses the edited body in every window, with no restart,
+and with no override saved an action renders the shipped default unchanged.
+Reset restores the shipped default; a template whose shipped default changed
+since its override was saved is flagged as drifted, and saving again adopts the
+current default as the new base. Overrides for templates this bb version no
+longer ships are listed as orphaned and ignored when rendering.
+
+Saving fails when the body references a variable the template does not declare.
+Declared variables the body no longer references save with a warning; for the
+thread notification templates that can remove a thread mention from the
+rendered text.
+
+```
+bb settings prompts list [--json]
+bb settings prompts get <id> [--json]
+bb settings prompts set <id> (--body <text> | --body-file <path>) [--json]
+bb settings prompts reset <id> [--json]
+```
+
+`--body-file -` reads the body from stdin. The SDK exposes the same surface as
+`sdk.system.experimental_prompts`. `bb guide` renders saved overrides when the
+server is reachable and falls back to the shipped defaults otherwise.
+
 ## Client SSH Targets
 
 `~/.bb/client.json` is local to the machine showing the UI. The CLI resolves the
@@ -1052,21 +1083,21 @@ schema, a default, and a revision that increments on every write. Writes name
 the revision they expect and receive `409 ui_preference_conflict` when another
 client wrote first, so a stale window cannot silently clobber a newer value.
 
-| Key                                  | Value                                                                                     |
-| ------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `sidebar.organizationMode`           | `project`, `chronological`, or `machine`                                                  |
-| `sidebar.threadGrouping.environment` | `auto`, `true`, or `false`                                                                |
-| `sidebar.chronologicalSort`          | `updated`, `created`, `alpha`, or `none`                                                  |
-| `sidebar.sectionOrder`               | Section id list for **By project**                                                        |
-| `sidebar.manualSectionOrder`         | Section id list for **Manually**                                                          |
-| `sidebar.machineSectionOrder`        | Section id list for **By machine**                                                        |
-| `sidebar.hiddenGroups`               | Legacy project, custom section, and machine ids migrated once into the Thread list plugin |
-| `sidebar.footerOrder`                | Footer action order                                                                       |
-| `sidebar.hiddenFooterItems`          | Footer actions moved into More                                                            |
-| `sidebar.pluginPanelOrder`           | Rail destination order                                                                    |
-| `sidebar.visiblePluginPanels`        | Rail destinations shown, or `null` for every destination                                  |
-| `sidebar.threadListProvider`         | Plugin key or `__automatic__` (default)                                                   |
-| `infoPanel.collapsedSections`        | Collapsed thread Info panel sections (`commits`, `uncommittedChanges`, `childThreads`, `forks`, `threadStorage`)   |
+| Key                                  | Value                                                                                                            |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `sidebar.organizationMode`           | `project`, `chronological`, or `machine`                                                                         |
+| `sidebar.threadGrouping.environment` | `auto`, `true`, or `false`                                                                                       |
+| `sidebar.chronologicalSort`          | `updated`, `created`, `alpha`, or `none`                                                                         |
+| `sidebar.sectionOrder`               | Section id list for **By project**                                                                               |
+| `sidebar.manualSectionOrder`         | Section id list for **Manually**                                                                                 |
+| `sidebar.machineSectionOrder`        | Section id list for **By machine**                                                                               |
+| `sidebar.hiddenGroups`               | Legacy project, custom section, and machine ids migrated once into the Thread list plugin                        |
+| `sidebar.footerOrder`                | Footer action order                                                                                              |
+| `sidebar.hiddenFooterItems`          | Footer actions moved into More                                                                                   |
+| `sidebar.pluginPanelOrder`           | Rail destination order                                                                                           |
+| `sidebar.visiblePluginPanels`        | Rail destinations shown, or `null` for every destination                                                         |
+| `sidebar.threadListProvider`         | Plugin key or `__automatic__` (default)                                                                          |
+| `infoPanel.collapsedSections`        | Collapsed thread Info panel sections (`commits`, `uncommittedChanges`, `childThreads`, `forks`, `threadStorage`) |
 
 The sidebar thread list defaults to `__automatic__`: the first installed thread list
 plugin other than the bundled Thread list plugin (`thread-list/thread-list`), or the

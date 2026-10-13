@@ -1,8 +1,8 @@
 ---
 kind: instruction
 title: bb Guide — Customization
-summary: Command reference for customizing the bb app color palette, typography, keyboard shortcuts, and mobile push notifications.
-intent: Explain the CLI theme surface, server-backed app customization, and push-notification device registration.
+summary: Command reference for customizing the bb app color palette, typography, keyboard shortcuts, prompt templates, and mobile push notifications.
+intent: Explain the CLI theme surface, server-backed app customization, prompt template overrides, and push-notification device registration.
 editingNotes: Keep flags accurate against the CLI implementation. Theme details live in the bb-cli skill's references/theming.md.
 ---
 Customization commands
@@ -322,6 +322,41 @@ The UI offers Replace binding or Cancel when assigning an occupied shortcut.
 plugin defaults and availability are resolved in each app window, where the
 plugin frontend runs. CLI/SDK callers should clear conflicting explicit
 bindings in the same update; plugin defaults yield to explicit bindings.
+
+Server-backed prompt templates
+
+Settings → Magic Prompts lists every prompt template bb ships, grouped by kind:
+prompts (thread titles, commit messages, agent-to-agent messages), instructions
+(the bb guide chapters), and system messages (thread ownership and child-thread
+notifications). Selecting a template shows its id, declared variables, editing
+notes, and a monospace editor for the full body. Save stores an override
+server-side, and the next trigger of that action uses it in every window without
+a restart. Reset restores the shipped default, and View shipped default shows
+the unmodified body. A template whose shipped default changed since the override
+was saved is flagged, so the default can be reviewed and the override saved
+again or reset. Every kind is editable; declared variables are filled at render
+time.
+
+  bb settings prompts list [--json]
+  bb settings prompts get <id> [--json]
+  bb settings prompts set <id> (--body <text> | --body-file <path>) [--json]
+  bb settings prompts reset <id> [--json]
+
+`set` accepts the full body inline with `--body` or from a file or stdin with
+`--body-file <path>` (`-` reads stdin). Prefer `--body-file` for multi-line
+bodies: inside double quotes the shell runs `backticks` and $(...) before bb
+sees them. Saving fails when the body references a variable the template does
+not declare. Declaring a variable the body no longer references saves with a
+warning; for notification templates that can remove a thread mention from the
+rendered text. `list` reports modified overrides and defaults that changed since
+the override was saved. `reset` also clears an orphaned override whose template
+this bb version no longer ships; orphaned overrides appear in Settings and are
+ignored when rendering.
+
+The SDK exposes the same operations as `sdk.system.experimental_prompts` with
+`list`, `get`, `set`, and `reset`. `bb guide` renders saved overrides when the
+server is reachable and falls back to the shipped defaults when it is not. Add
+`--json` to any command for machine-readable output.
 
 Push notifications
 

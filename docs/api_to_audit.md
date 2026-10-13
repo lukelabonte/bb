@@ -1634,12 +1634,12 @@ batches. Confirm the platform coverage (Linux
 `/proc`, macOS `lsof`) and whether the grace should be per call.
 
 0b. **Process identity.** `experimental_readProcessIdentity(pid)` from
-   `@get-bb/plugin-sdk/host` returns `{ command, startedAt }` (`ps` on POSIX,
-   CIM on Windows) or null. bb's launcher uses the same probe to confirm a
-   recorded PID before stopping it. Storage & retention checks a development
-   instance's recorded launcher entry path and start time before signalling
-   it, so a reused PID is never killed. Confirm start-time precision per
-   platform and whether a combined verified-stop helper should replace it.
+`@get-bb/plugin-sdk/host` returns `{ command, startedAt }` (`ps` on POSIX,
+CIM on Windows) or null. bb's launcher uses the same probe to confirm a
+recorded PID before stopping it. Storage & retention checks a development
+instance's recorded launcher entry path and start time before signalling
+it, so a reused PID is never killed. Confirm start-time precision per
+platform and whether a combined verified-stop helper should replace it.
 
 0. **Call timeout.** `ExperimentalHostCallOptions.timeoutMs` (default 30s,
    capped at 30 minutes) lets a plugin run a long host call — a setup
@@ -4145,6 +4145,10 @@ Stabilization requires exercising reconnect/reload, concurrent deduplication, ro
 ## `PluginBbSdk.system.experimental_recordTelemetryEvent`
 
 `system.experimental_recordTelemetryEvent(event)` posts one anonymous product event to `POST /api/v1/system/telemetry/events`, which forwards it to the server's usage telemetry under the install's anonymous id and drops it when usage data sharing is off. The request schema is a strict allow-list of setup-guide events with fixed enum or boolean properties; anything else is rejected with 400. Core callers, all through `recordTelemetryEvent` in `apps/app/src/components/onboarding/onboarding-telemetry.ts`: the setup guide (`OnboardingFlow`). Stabilize after deciding whether third-party plugins may emit product events at all (and, if so, how events are namespaced per plugin and rate limited), then rename project-wide and remove this entry.
+
+## `PluginBbSdk.system.experimental_prompts`
+
+`system.experimental_prompts.list()` returns every prompt template bb ships with its metadata (id, kind, title, summary, intent, editing notes, variables), whether an override is saved, whether the shipped default changed since it was saved, the saved body, and any orphaned overrides whose template no longer exists. `get({ id })` returns the effective body and the shipped default. `set({ id, body })` validates the body against the template's declared variables and a trial render, then stores a server-wide override that applies live; undeclared variable references fail with 400, and declared variables the body no longer references return a warning. `reset({ id })` deletes the override, or clears an orphaned row, and returns the template (or null for an orphan). Core callers, all through `apps/server/src/services/system/prompt-templates.ts` and the `/api/v1/settings/prompts` routes: Settings → Magic Prompts, `bb settings prompts`, and the `bb guide` chapter fetch. Stabilize after deciding whether overrides should be revisioned or per-client, whether plugin-registered templates belong in the registry, and after exercising concurrent saves from the app and CLI.
 
 ## `PluginBbSdk.hosts.experimental_discoverRepos`
 
